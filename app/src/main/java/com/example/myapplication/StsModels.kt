@@ -1,5 +1,8 @@
 ﻿package com.example.myapplication
 
+import android.graphics.Bitmap
+import android.net.Uri
+
 enum class StsMode(val label: String, val targetReps: Int) {
     SINGLE("単回立ち座り", 1),
     FIVE_TIMES("5回立ち座り (5xSTS)", 5)
@@ -31,7 +34,8 @@ data class PoseFrameData(
     val baseWidth: Float,             // 支持基底面（両足）幅（最小ガードレール適用後）
     val leftBiasPercent: Float,       // 解剖学的「左」偏倚率（50.0%が正中）
     val rightBiasPercent: Float,      // 解剖学的「右」偏倚率（100 - leftBiasPercent）
-    val grf: GrfSample? = null        // 推定床反力サンプル
+    val grf: GrfSample? = null,       // 推定床反力サンプル
+    val previewBitmap: Bitmap? = null // 同一フレームの実動画プレビュー画像
 )
 
 data class TimingBias(
@@ -65,11 +69,24 @@ data class SingleTrialMetrics(
     val peakLateralRightNewton: Float
 )
 
+data class FailedAttempt(
+    val timestampMs: Long,
+    val note: String = "離臀失敗"
+)
+
 data class StsAnalysisResult(
     val mode: StsMode,
     val anthropometrics: SubjectAnthropometrics,
     val trials: List<SingleTrialMetrics>,
     val overallTotalDurationSec: Float?, // 5xSTSの1回目開始〜5回目安定までの総時間
     val frames: List<PoseFrameData>,
-    val isFrontCameraMirrored: Boolean = false
-)
+    val isFrontCameraMirrored: Boolean = false,
+    val videoUri: Uri? = null,
+    val failedAttempts: List<FailedAttempt> = emptyList()
+) {
+    val successCount: Int get() = trials.size
+    val failureCount: Int get() = failedAttempts.size
+    val totalAttempts: Int get() = successCount + failureCount
+    val successRatePercent: Float get() = if (totalAttempts > 0) (successCount.toFloat() / totalAttempts) * 100f else 0f
+    val failureRatePercent: Float get() = if (totalAttempts > 0) (failureCount.toFloat() / totalAttempts) * 100f else 0f
+}

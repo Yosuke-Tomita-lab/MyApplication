@@ -51,28 +51,25 @@ object StsMetricCalculator {
         )
 
         val trials = standingPeakIndices.mapIndexed { repIdx, peakIdx ->
-            val searchStartIdx = if (repIdx == 0) {
-                0
-            } else {
-                val prevPeak = standingPeakIndices[repIdx - 1]
-                if (peakIdx > prevPeak + 2) {
-                    val subSlice = hipY.subList(prevPeak, peakIdx)
-                    val localMaxOffset = subSlice.indices.maxByOrNull { subSlice[it] } ?: 0
-                    prevPeak + localMaxOffset
-                } else {
-                    prevPeak
-                }
-            }
+            val prevPeak = if (repIdx == 0) 0 else standingPeakIndices[repIdx - 1]
 
             buildSingleTrialMetrics(
                 repIndex = repIdx + 1,
                 frames = framesWithGrf,
                 hipY = hipY,
                 shoulderY = shoulderY,
-                searchStartIdx = searchStartIdx,
+                prevPeakIdx = prevPeak,
                 peakIdx = peakIdx
             )
         }
+
+        val autoFailedAttempts = detectFailedAttempts(
+            hipY = hipY,
+            frames = framesWithGrf,
+            standingPeakIndices = standingPeakIndices,
+            sitHipY = sitHipY,
+            standHipY = standHipY
+        )
 
         val overallTotalSec = if (mode == StsMode.FIVE_TIMES && trials.size >= 5) {
             max(0f, (trials[4].stableTimeMs - trials.first().startTimeMs) / 1000f)
@@ -86,7 +83,8 @@ object StsMetricCalculator {
             trials = trials,
             overallTotalDurationSec = overallTotalSec,
             frames = framesWithGrf,
-            isFrontCameraMirrored = isFrontCameraMirrored
+            isFrontCameraMirrored = isFrontCameraMirrored,
+            failedAttempts = autoFailedAttempts
         )
     }
 
@@ -322,36 +320,49 @@ object StsMetricCalculator {
         frames: List<PoseFrameData>,
         hipY: List<Float>,
         shoulderY: List<Float>,
-        searchStartIdx: Int,
+        prevPeakIdx: Int,
         peakIdx: Int
     ): SingleTrialMetrics {
         val peakHipY = hipY[peakIdx]
-        val baselineSitHipY = hipY.subList(searchStartIdx, peakIdx + 1).maxOrNull() ?: hipY[peakIdx]
-        val excursion = max(0.02f, baselineSitHipY - peakHipY)
+        val subSlice = hipY.subList(prevPeakIdx, peakIdx + 1)
+        val maxLocalSitY = subSlice.maxOrNull() ?: hipY[peakIdx]
+        val excursion = max(0.02f, maxLocalSitY - peakHipY)
 
-        val baselineShoulderY = shoulderY.subList(searchStartIdx, peakIdx + 1).maxOrNull() ?: shoulderY[peakIdx]
+        // 立ち上がり直前の「着座底（最下点）」を立位ピークから後方探索（失敗試行に引きずられない）
+        var localBottomIdx = peakIdx
+        for (i in peakIdx downTo prevPeakIdx) {
+            if (hipY[i] >= maxLocalSitY - excursion * 0.08f) {
+                localBottomIdx = i
+                break
+            }
+        }
+
+        val baselineShoulderY = shoulderY.subList(localBottomIdx, peakIdx + 1).maxOrNull() ?: shoulderY[peakIdx]
         val shoulderExcursion = max(0.02f, baselineShoulderY - shoulderY[peakIdx])
 
-        var startIdx = searchStartIdx
-        for (i in searchStartIdx until peakIdx) {
-            val hipMoved = (baselineSitHipY - hipY[i]) >= excursion * 0.08f
-            val trunkLeaned = (baselineShoulderY - shoulderY[i]) >= shoulderExcursion * 0.10f
+        // 着座底からの動き出し（体幹前傾または腰部浮上開始）を成功立ち上がりの開始点と同定
+        var startIdx = localBottomIdx
+        for (i in localBottomIdx until peakIdx) {
+            val hipMoved = (maxLocalSitY - hipY[i]) >= excursion * 0.08f
+            val trunkLeaned = (baselineShoulderY - shoulderY[i]) >= shoulderExcursion * 0.12f
             if (hipMoved || trunkLeaned) {
                 startIdx = i
                 break
             }
         }
 
+        // 離臀（Excursionの20%浮上）
         var seatOffIdx = startIdx
         for (i in startIdx..peakIdx) {
-            if ((baselineSitHipY - hipY[i]) >= excursion * 0.22f) {
+            if ((maxLocalSitY - hipY[i]) >= excursion * 0.20f) {
                 seatOffIdx = i
                 break
             }
         }
 
+        // 立ち上がり完了（Excursionの90%到達）
         var standEndIdx = peakIdx
-        val targetStandY = baselineSitHipY - excursion * 0.90f
+        val targetStandY = maxLocalSitY - excursion * 0.90f
         for (i in seatOffIdx..peakIdx) {
             if (hipY[i] <= targetStandY) {
                 standEndIdx = i
@@ -381,6 +392,46 @@ object StsMetricCalculator {
             standEndTimeMs = frames[standEndIdx].timestampMs,
             stableTimeMs = frames[stableIdx].timestampMs
         )
+    }
+
+    private fun detectFailedAttempts(
+        hipY: List<Float>,
+        frames: List<PoseFrameData>,
+        standingPeakIndices: List<Int>,
+        sitHipY: Float,
+        standHipY: Float
+    ): List<FailedAttempt> {
+        val overallExcursion = max(0.03f, sitHipY - standHipY)
+        val detected = mutableListOf<FailedAttempt>()
+
+        for (repIdx in standingPeakIndices.indices) {
+            val peakIdx = standingPeakIndices[repIdx]
+            val prevPeak = if (repIdx == 0) 0 else standingPeakIndices[repIdx - 1]
+
+            // この立ち上がりの直前の着座底を探す
+            var bottomIdx = peakIdx
+            for (i in peakIdx downTo prevPeak) {
+                if (hipY[i] >= sitHipY - overallExcursion * 0.08f) {
+                    bottomIdx = i
+                    break
+                }
+            }
+
+            // prevPeak と bottomIdx の間のインターバル区間に、失敗した小山（離臀失敗）があるか探索
+            if (bottomIdx > prevPeak + 8) {
+                for (i in (prevPeak + 4) until (bottomIdx - 4)) {
+                    if (hipY[i] <= hipY[i - 1] && hipY[i] <= hipY[i + 1] &&
+                        hipY[i] <= hipY[i - 2] && hipY[i] <= hipY[i + 2]) {
+                        val lift = sitHipY - hipY[i]
+                        // 座位から一定以上浮いたが立位(70%)に届かなかったもの＝離臀失敗
+                        if (lift >= overallExcursion * 0.15f && lift < overallExcursion * 0.70f) {
+                            detected.add(FailedAttempt(timestampMs = frames[i].timestampMs, note = "離臀失敗"))
+                        }
+                    }
+                }
+            }
+        }
+        return detected.distinctBy { it.timestampMs / 500L }
     }
 
     private fun nearestFrame(frames: List<PoseFrameData>, targetMs: Long): PoseFrameData {

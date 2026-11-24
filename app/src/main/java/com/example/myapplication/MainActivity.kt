@@ -1,11 +1,14 @@
 ﻿package com.example.myapplication
 
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,45 +19,36 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                StsMainApp()
-            }
-        }
-    }
-}
-
-@Composable
-fun StsMainApp() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    var showCamera by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf(StsMode.SINGLE) }
-    var heightInput by remember { mutableStateOf("170") }
-    var weightInput by remember { mutableStateOf("65") }
-    var isMirrored by remember { mutableStateOf(false) }
-    var isAnalyzing by remember { mutableStateOf(false) }
-    var progress by remember { mutableFloatStateOf(0f) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var analysisResult by remember { mutableStateOf<StsAnalysisResult?>(null) }
-    var selectedRepIndex by remember { mutableIntStateOf(0) }
+class StsViewModel : ViewModel() {
+    var showCamera by mutableStateOf(false)
+    var selectedMode by mutableStateOf(StsMode.SINGLE)
+    var heightInput by mutableStateOf("170")
+    var weightInput by mutableStateOf("65")
+    var isMirrored by mutableStateOf(false)
+    var isAnalyzing by mutableStateOf(false)
+    var progress by mutableFloatStateOf(0f)
+    var errorMessage by mutableStateOf<String?>(null)
+    var analysisResult by mutableStateOf<StsAnalysisResult?>(null)
+    var selectedRepIndex by mutableIntStateOf(0)
+    var pendingCsvContent by mutableStateOf<String?>(null)
 
     fun currentAnthropometrics() = SubjectAnthropometrics(
         heightCm = heightInput.toFloatOrNull()?.coerceIn(100f, 240f) ?: 170f,
         weightKg = weightInput.toFloatOrNull()?.coerceIn(20f, 250f) ?: 65f
     )
 
-    fun runOfflineAnalysis(uri: Uri) {
+    fun runOfflineAnalysis(context: Context, uri: Uri) {
         showCamera = false
         val anthro = currentAnthropometrics()
-        scope.launch {
+        viewModelScope.launch {
             isAnalyzing = true
             errorMessage = null
             progress = 0f
@@ -71,7 +65,7 @@ fun StsMainApp() {
                     anthropometrics = anthro,
                     isFrontCameraMirrored = isMirrored
                 )
-                analysisResult = res
+                analysisResult = res.copy(videoUri = uri)
                 selectedRepIndex = 0
             } catch (e: Exception) {
                 errorMessage = e.message ?: "解析中にエラーが発生しました。"
@@ -81,17 +75,61 @@ fun StsMainApp() {
             }
         }
     }
+}
+
+class MainActivity : ComponentActivity() {
+    private val viewModel: StsViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                StsMainApp(viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun StsMainApp(viewModel: StsViewModel) {
+    val context = LocalContext.current
+
+    var showCamera by viewModel::showCamera
+    var selectedMode by viewModel::selectedMode
+    var heightInput by viewModel::heightInput
+    var weightInput by viewModel::weightInput
+    var isMirrored by viewModel::isMirrored
+    val isAnalyzing by viewModel::isAnalyzing
+    val progress by viewModel::progress
+    val errorMessage by viewModel::errorMessage
+    var analysisResult by viewModel::analysisResult
+    var selectedRepIndex by viewModel::selectedRepIndex
+    var pendingCsvContent by viewModel::pendingCsvContent
+
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri: Uri? ->
+        val csv = pendingCsvContent
+        if (uri != null && csv != null) {
+            val success = StsCsvExporter.saveCsvToUri(context, uri, csv)
+            if (success) {
+                Toast.makeText(context, "CSVファイルを保存しました", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "CSVの保存に失敗しました", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) runOfflineAnalysis(uri)
+        if (uri != null) viewModel.runOfflineAnalysis(context, uri)
     }
 
     if (showCamera) {
         StsCameraCaptureScreen(
             modeLabel = selectedMode.label,
-            onVideoRecorded = { uri -> runOfflineAnalysis(uri) },
+            onVideoRecorded = { uri -> viewModel.runOfflineAnalysis(context, uri) },
             onCancel = { showCamera = false }
         )
         return
@@ -197,13 +235,82 @@ fun StsMainApp() {
             if (result.overallTotalDurationSec != null) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text("5回立ち座り 全体所要時間", style = MaterialTheme.typography.labelLarge)
                             Text(
                                 text = String.format(Locale.US, "%.2f 秒", result.overallTotalDurationSec),
                                 style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Bold
                             )
+
+                            // 試行成績（総試行数・成功数・失敗数・確率）
+                            HorizontalDivider()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("総試行: ${result.totalAttempts}回", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                Text("成功: ${result.successCount}回 (${String.format(Locale.US, "%.1f%%", result.successRatePercent)})", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = "失敗: ${result.failureCount}回 (${String.format(Locale.US, "%.1f%%", result.failureRatePercent)})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (result.failureCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            if (result.failedAttempts.isNotEmpty()) {
+                                Text(
+                                    text = "離臀失敗時刻: " + result.failedAttempts.joinToString(", ") { String.format(Locale.US, "%.2fs", it.timestampMs / 1000f) },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val dateTag = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                                val filename = "STS_5xSTS_AllReps_$dateTag.csv"
+                                OutlinedButton(
+                                    onClick = {
+                                        pendingCsvContent = StsCsvExporter.generateCsv(result)
+                                        createCsvLauncher.launch(filename)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("全体CSV保存")
+                                }
+                                FilledTonalButton(
+                                    onClick = {
+                                        val content = StsCsvExporter.generateCsv(result)
+                                        StsCsvExporter.shareCsv(context, filename, content)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("全体CSV共有")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (result.overallTotalDurationSec == null && result.failedAttempts.isNotEmpty()) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("試行成績（総合）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("総試行: ${result.totalAttempts}回", fontWeight = FontWeight.SemiBold)
+                                Text("成功: ${result.successCount}回 (${String.format(Locale.US, "%.1f%%", result.successRatePercent)})")
+                                Text(
+                                    text = "失敗: ${result.failureCount}回 (${String.format(Locale.US, "%.1f%%", result.failureRatePercent)})",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
@@ -238,11 +345,28 @@ fun StsMainApp() {
                     PoseEventOverlayCard(
                         frames = result.frames,
                         trial = currentTrial,
+                        videoUri = result.videoUri,
+                        analysisResult = result,
                         onTrialUpdated = { updatedTrial ->
                             val updatedTrials = result.trials.map {
                                 if (it.repIndex == updatedTrial.repIndex) updatedTrial else it
                             }
-                            analysisResult = result.copy(trials = updatedTrials)
+                            val updatedOverallSec = if (result.mode == StsMode.FIVE_TIMES && updatedTrials.size >= 5) {
+                                max(0f, (updatedTrials[4].stableTimeMs - updatedTrials.first().startTimeMs) / 1000f)
+                            } else {
+                                result.overallTotalDurationSec
+                            }
+                            analysisResult = result.copy(
+                                trials = updatedTrials,
+                                overallTotalDurationSec = updatedOverallSec
+                            )
+                        },
+                        onFailedAttemptsUpdated = { updatedFails ->
+                            analysisResult = result.copy(failedAttempts = updatedFails)
+                        },
+                        onRequestSaveCsv = { filename, content ->
+                            pendingCsvContent = content
+                            createCsvLauncher.launch(filename)
                         }
                     )
                 }
