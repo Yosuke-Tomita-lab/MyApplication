@@ -15,7 +15,8 @@ object StsMetricCalculator {
         rawFrames: List<PoseFrameData>,
         mode: StsMode,
         anthropometrics: SubjectAnthropometrics = SubjectAnthropometrics(),
-        isFrontCameraMirrored: Boolean = false
+        isFrontCameraMirrored: Boolean = false,
+        customThirtySecReps: Int? = null
     ): StsAnalysisResult {
         require(rawFrames.size >= 5) { "解析に十分なフレーム数がありません（最低5フレーム必要）。" }
 
@@ -43,14 +44,52 @@ object StsMetricCalculator {
         val standHipY = hipY.minOrNull()!!
         val sitHipY = hipY.maxOrNull()!!
 
-        val standingPeakIndices = findRisingPeaks(
+        val is30s = mode == StsMode.THIRTY_SECONDS
+        val expectedCount = if (is30s) {
+            customThirtySecReps?.coerceIn(1, 60) ?: 10
+        } else {
+            mode.targetReps
+        }
+
+        val allCandidates = findRisingPeaks(
+            frames = framesWithGrf,
             hipY = hipY,
             sitY = sitHipY,
             standY = standHipY,
-            expectedCount = mode.targetReps
+            expectedCount = 0
         )
 
-        val trials = standingPeakIndices.mapIndexed { repIdx, peakIdx ->
+        val standingPeakIndices: List<Int> = if (is30s) {
+            if (customThirtySecReps != null && customThirtySecReps > 0) {
+                val targetN = customThirtySecReps.coerceIn(1, 60)
+                if (allCandidates.size >= targetN) {
+                    allCandidates.take(targetN)
+                } else {
+                    val supplemented = allCandidates.toMutableList()
+                    val lastIdx = framesWithGrf.lastIndex
+                    val baseStep = if (supplemented.size >= 2) {
+                        max(12, (supplemented.last() - supplemented.first()) / (supplemented.size - 1))
+                    } else {
+                        max(15, framesWithGrf.size / (targetN + 1))
+                    }
+                    while (supplemented.size < targetN) {
+                        val nextIdx = min(lastIdx - 4, (supplemented.lastOrNull() ?: 10) + baseStep)
+                        supplemented.add(nextIdx)
+                    }
+                    supplemented.sorted()
+                }
+            } else {
+                if (allCandidates.isNotEmpty()) allCandidates else listOf(framesWithGrf.size / 2)
+            }
+        } else {
+            if (expectedCount > 0 && allCandidates.size > expectedCount) {
+                allCandidates.sortedBy { hipY[it] }.take(expectedCount).sorted()
+            } else {
+                allCandidates
+            }
+        }
+
+        val rawTrials = standingPeakIndices.mapIndexed { repIdx, peakIdx ->
             val prevPeak = if (repIdx == 0) 0 else standingPeakIndices[repIdx - 1]
 
             buildSingleTrialMetrics(
@@ -59,8 +98,18 @@ object StsMetricCalculator {
                 hipY = hipY,
                 shoulderY = shoulderY,
                 prevPeakIdx = prevPeak,
-                peakIdx = peakIdx
+                peakIdx = peakIdx,
+                is30s = is30s
             )
+        }
+
+        // 30秒立ち座りの場合、第1回開始時刻から30.0秒以内に終了した試行のみ含める
+        // （6回目など、1回目開始から30秒を経過している試行は含めない）
+        val trials = if (is30s && rawTrials.isNotEmpty()) {
+            val t0 = rawTrials.first().startTimeMs
+            rawTrials.filter { it.standEndTimeMs <= t0 + 30_000L }
+        } else {
+            rawTrials
         }
 
         val autoFailedAttempts = detectFailedAttempts(
@@ -71,10 +120,16 @@ object StsMetricCalculator {
             standHipY = standHipY
         )
 
-        val overallTotalSec = if (mode == StsMode.FIVE_TIMES && trials.size >= 5) {
-            max(0f, (trials[4].stableTimeMs - trials.first().startTimeMs) / 1000f)
-        } else {
-            null
+        val overallTotalSec = when {
+            mode == StsMode.FIVE_TIMES && trials.size >= 5 -> {
+                max(0f, (trials[4].stableTimeMs - trials.first().startTimeMs) / 1000f)
+            }
+            mode == StsMode.THIRTY_SECONDS && trials.isNotEmpty() -> {
+                val t0 = trials.first().startTimeMs
+                val lastTime = trials.last().standEndTimeMs
+                min(30.0f, max(0f, (lastTime - t0) / 1000f))
+            }
+            else -> null
         }
 
         return StsAnalysisResult(
@@ -85,6 +140,117 @@ object StsMetricCalculator {
             frames = framesWithGrf,
             isFrontCameraMirrored = isFrontCameraMirrored,
             failedAttempts = autoFailedAttempts
+        )
+    }
+
+    /**
+     * 30秒立ち座りにおいて、動画を確認後にユーザーが入力した立ち上がり総数（newCount）に合わせて
+     * 既存の試行を維持しつつ、試行枠を増減・補完する
+     */
+    fun adjustTrialsCount(
+        currentResult: StsAnalysisResult,
+        newCount: Int
+    ): StsAnalysisResult {
+        val targetN = newCount.coerceIn(1, 60)
+        val frames = currentResult.frames
+        val existingTrials = currentResult.trials
+        if (existingTrials.size == targetN || frames.isEmpty()) return currentResult
+
+        if (existingTrials.size > targetN) {
+            val trimmed = existingTrials.take(targetN)
+            val t0 = trimmed.first().startTimeMs
+            val lastEnd = trimmed.last().standEndTimeMs
+            val overallSec = min(30.0f, max(0f, (lastEnd - t0) / 1000f))
+            return currentResult.copy(
+                trials = trimmed,
+                overallTotalDurationSec = overallSec
+            )
+        }
+
+        val addedTrials = mutableListOf<SingleTrialMetrics>()
+        val rawHipY = frames.map { frame ->
+            val lHip = frame.landmarks[23]?.y ?: 0.55f
+            val rHip = frame.landmarks[24]?.y ?: 0.55f
+            (lHip + rHip) / 2f
+        }
+        val hipY = movingAverage(rawHipY, windowSize = 5)
+        val rawShoulderY = frames.map { frame ->
+            val lSh = frame.landmarks[11]?.y ?: 0.30f
+            val rSh = frame.landmarks[12]?.y ?: 0.30f
+            (lSh + rSh) / 2f
+        }
+        val shoulderY = movingAverage(rawShoulderY, windowSize = 5)
+
+        val standHipY = hipY.minOrNull() ?: 0.3f
+        val sitHipY = hipY.maxOrNull() ?: 0.7f
+
+        val allPeaks = findRisingPeaks(
+            frames = frames,
+            hipY = hipY,
+            sitY = sitHipY,
+            standY = standHipY,
+            expectedCount = 0
+        )
+
+        val existingEndMs = existingTrials.lastOrNull()?.standEndTimeMs ?: 0L
+        val remainingPeaks = allPeaks.filter { frames[it].timestampMs > existingEndMs + 300L }
+
+        var curRep = existingTrials.size + 1
+        var peakIdxInRemaining = 0
+
+        while (curRep <= targetN) {
+            if (peakIdxInRemaining < remainingPeaks.size) {
+                val peakIdx = remainingPeaks[peakIdxInRemaining]
+                val prevPeak = if ((existingTrials + addedTrials).isEmpty()) 0 else {
+                    val prevTrial = (existingTrials + addedTrials).last()
+                    frames.indexOfFirst { it.timestampMs >= prevTrial.standEndTimeMs }.coerceAtLeast(0)
+                }
+                val trial = buildSingleTrialMetrics(
+                    repIndex = curRep,
+                    frames = frames,
+                    hipY = hipY,
+                    shoulderY = shoulderY,
+                    prevPeakIdx = prevPeak,
+                    peakIdx = peakIdx,
+                    is30s = true
+                )
+                addedTrials.add(trial)
+                peakIdxInRemaining++
+            } else {
+                val prevTrial = (existingTrials + addedTrials).lastOrNull()
+                val dt = if (prevTrial != null) max(1000L, prevTrial.standEndTimeMs - prevTrial.startTimeMs) else 2000L
+                val baseTime = prevTrial?.standEndTimeMs ?: frames.first().timestampMs
+                val newStart = min(frames.last().timestampMs - 400L, baseTime + 200L)
+                val newSeat = min(frames.last().timestampMs - 200L, newStart + dt / 3)
+                val newEnd = min(frames.last().timestampMs, newStart + dt)
+                val trial = recalculateTrialFromTimestamps(
+                    repIndex = curRep,
+                    frames = frames,
+                    startTimeMs = newStart,
+                    seatOffTimeMs = newSeat,
+                    standEndTimeMs = newEnd,
+                    stableTimeMs = newEnd
+                )
+                addedTrials.add(trial)
+            }
+            curRep++
+        }
+
+        val allTrials = existingTrials + addedTrials
+        // 30秒立ち座りの場合、第1回開始時刻から30.0秒以内に終了した試行のみ含める
+        val validTrials = if (allTrials.isNotEmpty()) {
+            val t0 = allTrials.first().startTimeMs
+            allTrials.filter { it.standEndTimeMs <= t0 + 30_000L }
+        } else {
+            allTrials
+        }
+        val t0 = validTrials.firstOrNull()?.startTimeMs ?: 0L
+        val lastEnd = validTrials.lastOrNull()?.standEndTimeMs ?: 0L
+        val overallSec = if (validTrials.isNotEmpty()) min(30.0f, max(0f, (lastEnd - t0) / 1000f)) else 0f
+
+        return currentResult.copy(
+            trials = validTrials,
+            overallTotalDurationSec = overallSec
         )
     }
 
@@ -321,7 +487,8 @@ object StsMetricCalculator {
         hipY: List<Float>,
         shoulderY: List<Float>,
         prevPeakIdx: Int,
-        peakIdx: Int
+        peakIdx: Int,
+        is30s: Boolean = false
     ): SingleTrialMetrics {
         val peakHipY = hipY[peakIdx]
         val subSlice = hipY.subList(prevPeakIdx, peakIdx + 1)
@@ -384,13 +551,15 @@ object StsMetricCalculator {
         }
         stableIdx = max(standEndIdx, min(lastIdx, stableIdx))
 
+        val actualStableMs = if (is30s) frames[standEndIdx].timestampMs else frames[stableIdx].timestampMs
+
         return recalculateTrialFromTimestamps(
             repIndex = repIndex,
             frames = frames,
             startTimeMs = frames[startIdx].timestampMs,
             seatOffTimeMs = frames[seatOffIdx].timestampMs,
             standEndTimeMs = frames[standEndIdx].timestampMs,
-            stableTimeMs = frames[stableIdx].timestampMs
+            stableTimeMs = actualStableMs
         )
     }
 
@@ -445,6 +614,7 @@ object StsMetricCalculator {
     )
 
     private fun findRisingPeaks(
+        frames: List<PoseFrameData>,
         hipY: List<Float>,
         sitY: Float,
         standY: Float,
@@ -452,7 +622,7 @@ object StsMetricCalculator {
     ): List<Int> {
         val range = max(0.03f, sitY - standY)
         val candidateThresholdY = sitY - range * 0.65f
-        val minSeparationIndices = max(5, hipY.size / max(expectedCount * 3, 6))
+        val minSeparationIndices = max(4, estimateWindowFrames(frames, targetMs = 650L))
 
         val candidates = mutableListOf<Int>()
         for (i in 1 until hipY.lastIndex) {
@@ -471,7 +641,7 @@ object StsMetricCalculator {
         if (candidates.isEmpty()) {
             return listOf(hipY.indices.minByOrNull { hipY[it] } ?: 0)
         }
-        return if (candidates.size > expectedCount) {
+        return if (expectedCount > 0 && candidates.size > expectedCount) {
             candidates.sortedBy { hipY[it] }.take(expectedCount).sorted()
         } else {
             candidates

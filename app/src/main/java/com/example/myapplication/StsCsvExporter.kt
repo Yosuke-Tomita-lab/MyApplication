@@ -33,19 +33,26 @@ object StsCsvExporter {
         sb.appendLine("Subject Height (cm),${result.anthropometrics.heightCm}")
         sb.appendLine("Subject Weight (kg),${result.anthropometrics.weightKg}")
         sb.appendLine("Mirrored Video,${result.isFrontCameraMirrored}")
+        if (result.mode == StsMode.THIRTY_SECONDS) {
+            sb.appendLine("30s-STS Completed Reps in 30s (30秒間立ち上がり完了回数),${result.thirtySecCompletedCount}")
+        }
         if (result.overallTotalDurationSec != null) {
-            sb.appendLine("5xSTS Overall Total Duration (s),${String.format(Locale.US, "%.3f", result.overallTotalDurationSec)}")
+            val label = if (result.mode == StsMode.THIRTY_SECONDS) "30s-STS Test Duration (s)" else "5xSTS Overall Total Duration (s)"
+            sb.appendLine("$label,${String.format(Locale.US, "%.3f", result.overallTotalDurationSec)}")
         }
         sb.appendLine()
 
         // 2. 全試行サマリー一覧（各回および平均・標準偏差）
+        val t0 = result.trials.firstOrNull()?.startTimeMs ?: 0L
         sb.appendLine("# All Repetitions Comparison Summary (各試行の指標比較一覧)")
-        sb.appendLine("Rep,Start_s,SeatOff_s,StandEnd_s,Stable_s,TotalDuration_s,SeatOffDuration_s,RisingDuration_s,StabilizationDuration_s,MeanLeftBias_Pct,PeakVertGRF_PctBW,PeakVertGRF_N,MinVertGRF_PctBW,MinVertGRF_N,PeakLatLeftGRF_PctBW,PeakLatLeftGRF_N,PeakLatRightGRF_PctBW,PeakLatRightGRF_N")
+        sb.appendLine("Rep,CumulativeTime_s,Start_s,SeatOff_s,StandEnd_s,Stable_s,TotalDuration_s,SeatOffDuration_s,RisingDuration_s,StabilizationDuration_s,MeanLeftBias_Pct,MeanRightBias_Pct,SeatOffLeftBias_Pct,SeatOffRightBias_Pct,PeakVertGRF_PctBW,PeakVertGRF_N,MinVertGRF_PctBW,MinVertGRF_N,PeakLatLeftGRF_PctBW,PeakLatLeftGRF_N,PeakLatRightGRF_PctBW,PeakLatRightGRF_N")
 
         result.trials.forEach { t ->
+            val cumSec = (t.standEndTimeMs - t0) / 1000f
             sb.appendLine(
                 listOf(
                     "${t.repIndex}回目",
+                    String.format(Locale.US, "%.3f", cumSec),
                     String.format(Locale.US, "%.3f", t.startTimeMs / 1000f),
                     String.format(Locale.US, "%.3f", t.seatOffTimeMs / 1000f),
                     String.format(Locale.US, "%.3f", t.standEndTimeMs / 1000f),
@@ -55,6 +62,9 @@ object StsCsvExporter {
                     String.format(Locale.US, "%.3f", t.risingDurationSec),
                     String.format(Locale.US, "%.3f", t.stabilizationDurationSec),
                     String.format(Locale.US, "%.1f", t.meanLeftBiasPercent),
+                    String.format(Locale.US, "%.1f", 100f - t.meanLeftBiasPercent),
+                    String.format(Locale.US, "%.1f", t.biasAtSeatOff.leftPercent),
+                    String.format(Locale.US, "%.1f", t.biasAtSeatOff.rightPercent),
                     String.format(Locale.US, "%.1f", t.peakVerticalBwPercent),
                     String.format(Locale.US, "%.1f", t.peakVerticalNewton),
                     String.format(Locale.US, "%.1f", t.minVerticalBwPercent),
@@ -88,12 +98,15 @@ object StsCsvExporter {
             sb.appendLine(
                 listOf(
                     "平均値 (Average)",
-                    "", "", "", "",
+                    "", "", "", "", "",
                     avg { it.totalDurationSec },
                     avg { it.seatOffDurationSec },
                     avg { it.risingDurationSec },
                     avg { it.stabilizationDurationSec },
                     avg1 { it.meanLeftBiasPercent },
+                    avg1 { 100f - it.meanLeftBiasPercent },
+                    avg1 { it.biasAtSeatOff.leftPercent },
+                    avg1 { it.biasAtSeatOff.rightPercent },
                     avg1 { it.peakVerticalBwPercent },
                     avg1 { it.peakVerticalNewton },
                     avg1 { it.minVerticalBwPercent },
@@ -108,12 +121,15 @@ object StsCsvExporter {
             sb.appendLine(
                 listOf(
                     "標準偏差 (StdDev)",
-                    "", "", "", "",
+                    "", "", "", "", "",
                     sd { it.totalDurationSec },
                     sd { it.seatOffDurationSec },
                     sd { it.risingDurationSec },
                     sd { it.stabilizationDurationSec },
                     sd1 { it.meanLeftBiasPercent },
+                    sd1 { 100f - it.meanLeftBiasPercent },
+                    sd1 { it.biasAtSeatOff.leftPercent },
+                    sd1 { it.biasAtSeatOff.rightPercent },
                     sd1 { it.peakVerticalBwPercent },
                     sd1 { it.peakVerticalNewton },
                     sd1 { it.minVerticalBwPercent },
@@ -131,11 +147,15 @@ object StsCsvExporter {
         sb.appendLine("# Event Timings & Weight-Bearing Bias Breakdown (各試行のイベント詳細・左右偏倚 - 50%正中)")
         sb.appendLine("Rep,Event,Timestamp_ms,Timestamp_s,Left_Bias_Pct,Right_Bias_Pct")
         result.trials.forEach { t ->
+            val is30s = result.mode == StsMode.THIRTY_SECONDS
             val rep = "${t.repIndex}回目"
             sb.appendLine("$rep,Start (運動開始),${t.startTimeMs},${String.format(Locale.US, "%.3f", t.startTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtStart.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtStart.rightPercent)}")
             sb.appendLine("$rep,Seat-off (離臀),${t.seatOffTimeMs},${String.format(Locale.US, "%.3f", t.seatOffTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtSeatOff.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtSeatOff.rightPercent)}")
-            sb.appendLine("$rep,Stand-end (立ち上がり完了),${t.standEndTimeMs},${String.format(Locale.US, "%.3f", t.standEndTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtStandEnd.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtStandEnd.rightPercent)}")
-            sb.appendLine("$rep,Stable (立位安定),${t.stableTimeMs},${String.format(Locale.US, "%.3f", t.stableTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtStable.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtStable.rightPercent)}")
+            val endLabel = if (is30s) "End (終了)" else "Stand-end (立ち上がり完了)"
+            sb.appendLine("$rep,$endLabel,${t.standEndTimeMs},${String.format(Locale.US, "%.3f", t.standEndTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtStandEnd.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtStandEnd.rightPercent)}")
+            if (!is30s) {
+                sb.appendLine("$rep,Stable (立位安定),${t.stableTimeMs},${String.format(Locale.US, "%.3f", t.stableTimeMs / 1000f)},${String.format(Locale.US, "%.1f", t.biasAtStable.leftPercent)},${String.format(Locale.US, "%.1f", t.biasAtStable.rightPercent)}")
+            }
         }
         sb.appendLine()
 

@@ -3,9 +3,10 @@
 import android.graphics.Bitmap
 import android.net.Uri
 
-enum class StsMode(val label: String, val targetReps: Int) {
-    SINGLE("単回立ち座り", 1),
-    FIVE_TIMES("5回立ち座り (5xSTS)", 5)
+enum class StsMode(val label: String, val chipLabel: String, val targetReps: Int) {
+    SINGLE("単回立ち座り", "単回", 1),
+    FIVE_TIMES("5回立ち座り (5xSTS)", "5回 (5xSTS)", 5),
+    THIRTY_SECONDS("30秒立ち座り (30s-STS)", "30秒 (30s-STS)", 0)
 }
 
 data class SubjectAnthropometrics(
@@ -89,4 +90,14 @@ data class StsAnalysisResult(
     val totalAttempts: Int get() = successCount + failureCount
     val successRatePercent: Float get() = if (totalAttempts > 0) (successCount.toFloat() / totalAttempts) * 100f else 0f
     val failureRatePercent: Float get() = if (totalAttempts > 0) (failureCount.toFloat() / totalAttempts) * 100f else 0f
+
+    /**
+     * 30秒立ち座りにおいて、第1回開始から30.0秒以内に立位完了（standEndTimeMs）した試行数
+     */
+    val thirtySecCompletedCount: Int get() = if (mode == StsMode.THIRTY_SECONDS && trials.isNotEmpty()) {
+        val t0 = trials.first().startTimeMs
+        trials.count { it.standEndTimeMs <= t0 + 30_000L }
+    } else {
+        trials.size
+    }
 }

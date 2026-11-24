@@ -9,9 +9,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.max
+import kotlin.math.min
 
 class StsViewModel : ViewModel() {
     var showCamera by mutableStateOf(false)
@@ -63,7 +67,8 @@ class StsViewModel : ViewModel() {
                     rawFrames = rawFrames,
                     mode = selectedMode,
                     anthropometrics = anthro,
-                    isFrontCameraMirrored = isMirrored
+                    isFrontCameraMirrored = isMirrored,
+                    customThirtySecReps = null
                 )
                 analysisResult = res.copy(videoUri = uri)
                 selectedRepIndex = 0
@@ -149,12 +154,23 @@ fun StsMainApp(viewModel: StsViewModel) {
             )
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 StsMode.entries.forEach { mode ->
                     FilterChip(
                         selected = selectedMode == mode,
                         onClick = { selectedMode = mode },
-                        label = { Text(mode.label) }
+                        label = {
+                            Text(
+                                text = mode.chipLabel,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     )
                 }
             }
@@ -179,6 +195,21 @@ fun StsMainApp(viewModel: StsViewModel) {
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
+            }
+
+            if (selectedMode == StsMode.THIRTY_SECONDS) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "💡 30秒立ち座り: 動画読込後、動画・骨格を確認しながら実施総数を入力・設定できます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -232,6 +263,92 @@ fun StsMainApp(viewModel: StsViewModel) {
         }
 
         analysisResult?.let { result ->
+            if (result.mode == StsMode.THIRTY_SECONDS) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "30秒立ち座り 立ち上がり総数の入力・設定",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "動画を確認後、実施した立ち上がり総数を入力してください。その回数分の試行枠（1〜N回目）が生成され、各回のイベント（開始・離臀・終了）を選択・検証できます。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            var countInputText by remember(result.trials.size) {
+                                mutableStateOf(result.trials.size.toString())
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = countInputText,
+                                    onValueChange = { countInputText = it.filter { ch -> ch.isDigit() } },
+                                    label = { Text("総回数 (回)") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1.1f)
+                                )
+
+                                Button(
+                                    onClick = {
+                                        val target = countInputText.toIntOrNull()?.coerceIn(1, 60) ?: result.trials.size
+                                        analysisResult = StsMetricCalculator.adjustTrialsCount(result, target)
+                                        if (selectedRepIndex >= target) {
+                                            selectedRepIndex = target - 1
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1.3f)
+                                ) {
+                                    Text("総数を反映")
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val target = (result.trials.size - 1).coerceAtLeast(1)
+                                        countInputText = target.toString()
+                                        analysisResult = StsMetricCalculator.adjustTrialsCount(result, target)
+                                        if (selectedRepIndex >= target) {
+                                            selectedRepIndex = target - 1
+                                        }
+                                    },
+                                    enabled = result.trials.size > 1,
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("－1")
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val target = (result.trials.size + 1).coerceAtMost(60)
+                                        countInputText = target.toString()
+                                        analysisResult = StsMetricCalculator.adjustTrialsCount(result, target)
+                                        selectedRepIndex = target - 1
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("＋1")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (result.overallTotalDurationSec != null) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -239,12 +356,52 @@ fun StsMainApp(viewModel: StsViewModel) {
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("5回立ち座り 全体所要時間", style = MaterialTheme.typography.labelLarge)
-                            Text(
-                                text = String.format(Locale.US, "%.2f 秒", result.overallTotalDurationSec),
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            val is30s = result.mode == StsMode.THIRTY_SECONDS
+                            val title = if (is30s) "30秒立ち座り（30s-STS）結果" else "5回立ち座り 全体所要時間"
+                            Text(title, style = MaterialTheme.typography.labelLarge)
+
+                            if (is30s) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "${result.trials.size} 回",
+                                            style = MaterialTheme.typography.headlineLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "確定 立ち上がり総数",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = String.format(Locale.US, "計測時間: %.2f 秒", result.overallTotalDurationSec),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = String.format(
+                                                Locale.US,
+                                                "平均ペース: %.2f 秒/回",
+                                                30.0f / max(1, result.trials.size)
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text(
+                                    text = String.format(Locale.US, "%.2f 秒", result.overallTotalDurationSec),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
 
                             // 試行成績（総試行数・成功数・失敗数・確率）
                             HorizontalDivider()
@@ -273,7 +430,11 @@ fun StsMainApp(viewModel: StsViewModel) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 val dateTag = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                                val filename = "STS_5xSTS_AllReps_$dateTag.csv"
+                                val filename = if (is30s) {
+                                    "STS_30sSTS_All${result.trials.size}Reps_$dateTag.csv"
+                                } else {
+                                    "STS_5xSTS_AllReps_$dateTag.csv"
+                                }
                                 OutlinedButton(
                                     onClick = {
                                         pendingCsvContent = StsCsvExporter.generateCsv(result)
@@ -316,9 +477,24 @@ fun StsMainApp(viewModel: StsViewModel) {
                 }
             }
 
+            // 5STSおよび30秒立ち座りでの累積時間・立ち上がり時間グラフおよび重心左右差グラフ
             if (result.trials.size > 1) {
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StsCumulativeTimeGraphCard(trials = result.trials, mode = result.mode)
+                }
+                item {
+                    StsLateralBiasGraphCard(trials = result.trials)
+                }
+            }
+
+            if (result.trials.size > 1) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         result.trials.forEachIndexed { idx, trial ->
                             FilterChip(
                                 selected = selectedRepIndex == idx,
@@ -333,10 +509,10 @@ fun StsMainApp(viewModel: StsViewModel) {
             val currentTrial = result.trials.getOrNull(selectedRepIndex) ?: result.trials.firstOrNull()
             if (currentTrial != null) {
                 item {
-                    TimeSummaryCard(trial = currentTrial)
+                    TimeSummaryCard(trial = currentTrial, is30s = result.mode == StsMode.THIRTY_SECONDS)
                 }
                 item {
-                    BiasSummaryCard(trial = currentTrial)
+                    BiasSummaryCard(trial = currentTrial, is30s = result.mode == StsMode.THIRTY_SECONDS)
                 }
                 item {
                     EstimatedGrfCard(trial = currentTrial)
@@ -351,10 +527,16 @@ fun StsMainApp(viewModel: StsViewModel) {
                             val updatedTrials = result.trials.map {
                                 if (it.repIndex == updatedTrial.repIndex) updatedTrial else it
                             }
-                            val updatedOverallSec = if (result.mode == StsMode.FIVE_TIMES && updatedTrials.size >= 5) {
-                                max(0f, (updatedTrials[4].stableTimeMs - updatedTrials.first().startTimeMs) / 1000f)
-                            } else {
-                                result.overallTotalDurationSec
+                            val updatedOverallSec = when {
+                                result.mode == StsMode.FIVE_TIMES && updatedTrials.size >= 5 -> {
+                                    max(0f, (updatedTrials[4].stableTimeMs - updatedTrials.first().startTimeMs) / 1000f)
+                                }
+                                result.mode == StsMode.THIRTY_SECONDS && updatedTrials.isNotEmpty() -> {
+                                    val t0 = updatedTrials.first().startTimeMs
+                                    val lastTime = updatedTrials.last().standEndTimeMs
+                                    min(30.0f, max(0f, (lastTime - t0) / 1000f))
+                                }
+                                else -> result.overallTotalDurationSec
                             }
                             analysisResult = result.copy(
                                 trials = updatedTrials,
@@ -374,7 +556,12 @@ fun StsMainApp(viewModel: StsViewModel) {
 
             if (result.trials.size > 1) {
                 item {
-                    Text("1〜5回目 比較", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    val compareTitle = when (result.mode) {
+                        StsMode.FIVE_TIMES -> "1〜5回目 比較"
+                        StsMode.THIRTY_SECONDS -> "全試行（1〜${result.trials.size}回目）比較"
+                        else -> "各回比較"
+                    }
+                    Text(compareTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
                 items(result.trials) { trial ->
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -403,41 +590,65 @@ fun StsMainApp(viewModel: StsViewModel) {
 }
 
 @Composable
-private fun TimeSummaryCard(trial: SingleTrialMetrics) {
+private fun TimeSummaryCard(trial: SingleTrialMetrics, is30s: Boolean = false) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("時間指標（${trial.repIndex}回目）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("総運動時間（開始〜安定）")
-                Text(String.format(Locale.US, "%.2f 秒", trial.totalDurationSec), fontWeight = FontWeight.SemiBold)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("離臀時間（開始〜離臀）")
-                Text(String.format(Locale.US, "%.2f 秒", trial.seatOffDurationSec), fontWeight = FontWeight.SemiBold)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("立ち上がり時間（離臀〜完了）")
-                Text(String.format(Locale.US, "%.2f 秒", trial.risingDurationSec), fontWeight = FontWeight.SemiBold)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("立位安定時間（完了〜安定）")
-                Text(String.format(Locale.US, "%.2f 秒", trial.stabilizationDurationSec), fontWeight = FontWeight.SemiBold)
+            if (is30s) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("総運動時間（開始〜終了）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.totalDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("離臀時間（開始〜離臀）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.seatOffDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("立ち上がり時間（離臀〜終了）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.risingDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+            } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("総運動時間（開始〜安定）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.totalDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("離臀時間（開始〜離臀）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.seatOffDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("立ち上がり時間（離臀〜完了）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.risingDurationSec), fontWeight = FontWeight.SemiBold)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("立位安定時間（完了〜安定）")
+                    Text(String.format(Locale.US, "%.2f 秒", trial.stabilizationDurationSec), fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BiasSummaryCard(trial: SingleTrialMetrics) {
+private fun BiasSummaryCard(trial: SingleTrialMetrics, is30s: Boolean = false) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("左右重心偏倚（50%が正中）", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            listOf(
-                "運動開始時" to trial.biasAtStart,
-                "離臀時" to trial.biasAtSeatOff,
-                "立ち上がり完了時" to trial.biasAtStandEnd,
-                "立位安定時" to trial.biasAtStable
-            ).forEach { (label, b) ->
+            val eventList = if (is30s) {
+                listOf(
+                    "運動開始時" to trial.biasAtStart,
+                    "離臀時" to trial.biasAtSeatOff,
+                    "立ち上がり終了時" to trial.biasAtStandEnd
+                )
+            } else {
+                listOf(
+                    "運動開始時" to trial.biasAtStart,
+                    "離臀時" to trial.biasAtSeatOff,
+                    "立ち上がり完了時" to trial.biasAtStandEnd,
+                    "立位安定時" to trial.biasAtStable
+                )
+            }
+            eventList.forEach { (label, b) ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(label)
                     Text(

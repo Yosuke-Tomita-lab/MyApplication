@@ -118,10 +118,12 @@ fun PoseEventOverlayCard(
 
     var reanalyzeNotice by remember { mutableStateOf<String?>(null) }
 
+    val is30s = analysisResult?.mode == StsMode.THIRTY_SECONDS
+
     val hasPendingChanges = (startMs != trial.startTimeMs) ||
             (seatOffMs != trial.seatOffTimeMs) ||
             (standEndMs != trial.standEndTimeMs) ||
-            (stableMs != trial.stableTimeMs)
+            (!is30s && stableMs != trial.stableTimeMs)
 
     val currentFrame = frames[frameIndex.coerceIn(0, frames.lastIndex)]
     val currentMs = currentFrame.timestampMs
@@ -139,12 +141,21 @@ fun PoseEventOverlayCard(
         }
     }
 
-    val phaseLabel = when {
-        currentMs < startMs -> "待機・座位"
-        currentMs < seatOffMs -> "フェーズ1: 開始〜離臀前"
-        currentMs < standEndMs -> "フェーズ2: 立ち上がり中"
-        currentMs < stableMs -> "フェーズ3: 立位安定化中"
-        else -> "フェーズ4: 立位安定"
+    val phaseLabel = if (is30s) {
+        when {
+            currentMs < startMs -> "待機・着座中"
+            currentMs < seatOffMs -> "前傾〜離臀前"
+            currentMs < standEndMs -> "立ち上がり中"
+            else -> "立ち上がり終了（次試行へ）"
+        }
+    } else {
+        when {
+            currentMs < startMs -> "待機・座位"
+            currentMs < seatOffMs -> "フェーズ1: 開始〜離臀前"
+            currentMs < standEndMs -> "フェーズ2: 立ち上がり中"
+            currentMs < stableMs -> "フェーズ3: 立位安定化中"
+            else -> "フェーズ4: 立位安定"
+        }
     }
 
     fun seekToMs(targetMs: Long) {
@@ -155,8 +166,8 @@ fun PoseEventOverlayCard(
     fun executeReanalysis() {
         val t0 = min(startMs, seatOffMs)
         val t1 = max(t0, min(seatOffMs, standEndMs))
-        val t2 = max(t1, min(standEndMs, stableMs))
-        val t3 = max(t2, stableMs)
+        val t2 = max(t1, standEndMs)
+        val t3 = if (is30s) t2 else max(t2, stableMs)
 
         startMs = t0
         seatOffMs = t1
@@ -172,14 +183,16 @@ fun PoseEventOverlayCard(
             stableTimeMs = t3
         )
         onTrialUpdated(updated)
-        reanalyzeNotice = "イベント時刻を反映し、再解析結果を更新しました（総時間: ${String.format(Locale.US, "%.2f", updated.totalDurationSec)}秒）"
+        val durationLabel = if (is30s) "立ち上がり時間" else "総時間"
+        val durationVal = if (is30s) updated.risingDurationSec else updated.totalDurationSec
+        reanalyzeNotice = "イベント時刻（開始・離臀・終了）を反映し、再解析結果を更新しました（$durationLabel: ${String.format(Locale.US, "%.2f", durationVal)}秒）"
     }
 
     fun resetToCurrentTrial() {
         startMs = trial.startTimeMs
         seatOffMs = trial.seatOffTimeMs
         standEndMs = trial.standEndTimeMs
-        stableMs = trial.stableTimeMs
+        stableMs = if (is30s) trial.standEndTimeMs else trial.stableTimeMs
         reanalyzeNotice = null
     }
 
@@ -444,25 +457,28 @@ fun PoseEventOverlayCard(
                 onJump = { seekToMs(seatOffMs) }
             )
             EventItemRow(
-                label = "完了",
+                label = if (is30s) "終了" else "完了",
                 eventColor = Color(0xFF2196F3),
                 targetMs = standEndMs,
                 onSetCurrent = {
                     standEndMs = currentMs
+                    if (is30s) stableMs = currentMs
                     reanalyzeNotice = null
                 },
                 onJump = { seekToMs(standEndMs) }
             )
-            EventItemRow(
-                label = "安定",
-                eventColor = Color(0xFF9C27B0),
-                targetMs = stableMs,
-                onSetCurrent = {
-                    stableMs = currentMs
-                    reanalyzeNotice = null
-                },
-                onJump = { seekToMs(stableMs) }
-            )
+            if (!is30s) {
+                EventItemRow(
+                    label = "安定",
+                    eventColor = Color(0xFF9C27B0),
+                    targetMs = stableMs,
+                    onSetCurrent = {
+                        stableMs = currentMs
+                        reanalyzeNotice = null
+                    },
+                    onJump = { seekToMs(stableMs) }
+                )
+            }
 
             // 試行間の失敗試行（離臀失敗）記録セクション
             var recordFailuresEnabled by remember {
