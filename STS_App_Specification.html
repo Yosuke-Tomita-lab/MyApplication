@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>立ち座り生体力学解析システム アプリケーション仕様書</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 15mm 18mm 15mm;
+    @bottom-right {
+      content: counter(page) " / " counter(pages);
+      font-size: 9pt;
+      color: #666;
+    }
+  }
+  body {
+    font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
+    color: #2D3748;
+    line-height: 1.6;
+    font-size: 10pt;
+    margin: 0;
+    padding: 0;
+  }
+  h1 {
+    font-size: 20pt;
+    color: #1A365D;
+    border-bottom: 3px solid #2B6CB0;
+    padding-bottom: 8px;
+    margin-top: 0;
+    margin-bottom: 6px;
+  }
+  .doc-subtitle {
+    font-size: 11pt;
+    color: #4A5568;
+    margin-bottom: 20px;
+    font-weight: 500;
+  }
+  .doc-meta {
+    background-color: #EDF2F7;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 24px;
+    font-size: 9pt;
+    display: flex;
+    justify-content: space-between;
+  }
+  h2 {
+    font-size: 13pt;
+    color: #2B6CB0;
+    border-left: 5px solid #2B6CB0;
+    padding-left: 10px;
+    margin-top: 22px;
+    margin-bottom: 10px;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11pt;
+    color: #2D3748;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+  p {
+    margin: 6px 0;
+  }
+  ul, ol {
+    margin: 6px 0 12px 20px;
+    padding: 0;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 9pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #CBD5E0;
+    padding: 7px 10px;
+    text-align: left;
+  }
+  th {
+    background-color: #EBF8FF;
+    color: #2B6CB0;
+    font-weight: 600;
+  }
+  tr:nth-child(even) {
+    background-color: #F7FAFC;
+  }
+  .highlight-box {
+    background-color: #EBF8FF;
+    border-left: 4px solid #3182CE;
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .formula-box {
+    background-color: #F7FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: "Consolas", monospace;
+    font-size: 9pt;
+    margin: 8px 0;
+    color: #2C5282;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 8.5pt;
+    font-weight: 600;
+  }
+  .badge-blue { background-color: #BEE3F8; color: #2B6CB0; }
+  .badge-green { background-color: #C6F6D5; color: #276749; }
+  .badge-orange { background-color: #FEEBC8; color: #C05621; }
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+  <h1>立ち座り生体力学解析システム アプリケーション仕様書</h1>
+  <div class="doc-subtitle">Sit-to-Stand (STS) Biomechanical Motion Analysis Mobile Application</div>
+
+  <div class="doc-meta">
+    <div><strong>システム名:</strong> STS Biomechanical Analyzer (Android)</div>
+    <div><strong>対象プラットフォーム:</strong> Android (Jetpack Compose / MediaPipe Pose)</div>
+    <div><strong>バージョン:</strong> 2.0 (5STS・30s-STS対応版)</div>
+  </div>
+
+  <h2>1. システム概要と開発目的</h2>
+  <p>
+    本システムは、理学療法、リハビリテーション医学、およびスポーツ科学における基本動作評価「立ち座りテスト（Sit-to-Stand: STS）」を、ウェアラブルセンサーやフォースプレート等の特殊機材を用いず、スマートフォン単体（単眼カメラ動画）でリアルタイムまたはオフライン動画解析するバイオメカニクス計測アプリケーションである。
+  </p>
+  <p>
+    Google MediaPipe Pose による高精度な骨格検出と生体力学モデル（身体重心推計・推定床反力モデル）を統合し、主要な3つの臨床STSテストに対応する。
+  </p>
+
+  <h2>2. 計測モード仕様</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">計測モード</th>
+        <th style="width: 35%;">評価目的・特徴</th>
+        <th style="width: 40%;">イベント同定構成・判定基準</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>① 通常立ち上がり<br>(Single STS)</strong></td>
+        <td>1回の立ち上がり動作を詳細に評価。<br>起立初期の前傾から立位安定までのフェーズ分割とピーク床反力を算出。</td>
+        <td>
+          <span class="badge badge-blue">開始</span> <span class="badge badge-blue">離臀</span> <span class="badge badge-blue">終了</span> <span class="badge badge-blue">安定</span><br>
+          立位到達後300msウィンドウで左右偏倚変動幅が2.5%以内の静止判定（フェーズ4）まで同定。
+        </td>
+      </tr>
+      <tr>
+        <td><strong>② 5回立ち座り<br>(5STS / FTSTS)</strong></td>
+        <td>下肢筋力・瞬発力・動的バランスの総合評価。<br>各試行の個別指標に加え、全5回完了までのトータル時間および試行間失敗を評価。</td>
+        <td>
+          <span class="badge badge-blue">開始</span> <span class="badge badge-blue">離臀</span> <span class="badge badge-blue">終了</span> <span class="badge badge-blue">安定</span>（各5回）<br>
+          試行間に発生した「離臀失敗（小山動作）」を自動検出・手動記録。トータル試行数、成功数、失敗数、成功率（%）を算出。
+        </td>
+      </tr>
+      <tr>
+        <td><strong>③ 30秒立ち座り<br>(30s-STS / CS-30)</strong></td>
+        <td>下肢筋持久力の評価。<br>動画確認後に総数を手動入力・補正可能。<br><strong>30秒ウィンドウ制限</strong>により30秒超過試行を自動除外。</td>
+        <td>
+          <span class="badge badge-orange">開始</span> <span class="badge badge-orange">離臀</span> <span class="badge badge-orange">終了</span>（3イベント特化）<br>
+          立位安定フェーズは省略。<br>
+          <strong>第1回開始時刻 $T_0$ から30.0秒以内</strong>に終了した試行のみをカウント。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>3. 生体力学推定アルゴリズム仕様</h2>
+
+  <h3>3.1 骨格座標の欠損補間および平滑化</h3>
+  <p>
+    被験者の振り返り、遮蔽、一時的なトラッキング消失に対応するため、追跡対象12ランドマーク（肩#11,12、股#23,24、膝#25,26、足首#27,28、踵#29,30、つま先#31,32）に対し、フレーム間ユークリッド距離閾値（0.16）による外れ値除去と、有効フレーム間の線形補間を自動適用。さらに5フレーム移動平均フィルタにより高周波ノイズを除去する。
+  </p>
+
+  <h3>3.2 身体重心（CoM）および左右偏倚率（Lateral Bias %）</h3>
+  <p>
+    人体質量中心比率モデルに基づき、肩部、骨盤部、足部座標から2次元重心位置（$CoM_x, CoM_y$）を推計する。
+  </p>
+  <div class="formula-box">
+    CoM_x = 0.30 &times; MidShoulder_x + 0.40 &times; MidPelvis_x + 0.30 &times; MidFoot_x<br>
+    CoM_y = 0.30 &times; MidShoulder_y + 0.40 &times; MidPelvis_y + 0.30 &times; MidFoot_y<br>
+    BaseWidth = max(|LeftFoot_x - RightFoot_x|, PelvisWidth &times; 0.8)<br>
+    LeftBias(%) = 50% + [(CoM_x - MidBase_x) / BaseWidth] &times; 100%
+  </div>
+  <p>
+    ※ 50.0%を正中とし、50%超は左側荷重優位、50%未満は右側荷重優位を表す。前面インカメラ使用時のミラーリング反転補正機能も備える。
+  </p>
+
+  <h3>3.3 推定床反力（Estimated GRF: Ground Reaction Force）</h3>
+  <p>
+    被験者パラメータ（身長・体重）と画像内直立高から物理空間スケール変換係数（m/norm）を決定。CoM加速度からニュートン力学に基づき鉛直床反力および左右制動力を算出する。
+  </p>
+  <div class="formula-box">
+    F_vertical (N) = Mass_kg &times; (g + a_y)<br>
+    F_vertical (%BW) = (1 + a_y / g) &times; 100%<br>
+    F_lateral (N) = Mass_kg &times; a_x&emsp;|&emsp;F_lateral (%BW) = (a_x / g) &times; 100%
+  </div>
+
+  <div class="page-break"></div>
+
+  <h2>4. タイミング・イベント同定ロジック</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 22%;">イベント</th>
+        <th style="width: 38%;">同定条件・アルゴリズム</th>
+        <th style="width: 40%;">臨床的意義・フェーズ</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>① 立ち上がり開始<br>(Start)</strong></td>
+        <td>立位直前着座底（Local Bottom）から、腰部変位 8% または 体幹前傾（肩変位）12% を超えた最初のフレーム。</td>
+        <td>体幹屈曲相（Flexion Momentum Phase）の開始。動き出しの初動判定。</td>
+      </tr>
+      <tr>
+        <td><strong>② 離臀<br>(Seat-Off)</strong></td>
+        <td>座位底から立位全変位（Excursion）の <strong>20% 浮上</strong>に達したフレーム。</td>
+        <td>大腿・殿部が座面を離れる瞬間。床反力鉛直成分が最大化しやすい重要相。</td>
+      </tr>
+      <tr>
+        <td><strong>③ 立ち上がり終了<br>(Stand-End)</strong></td>
+        <td>立位全変位（Excursion）の <strong>90% 到達</strong>に達したフレーム。</td>
+        <td>伸展相（Extension Phase）の完了。30s-STSでは本イベントをもって1回完了と判定。</td>
+      </tr>
+      <tr>
+        <td><strong>④ 立位安定<br>(Stable)</strong></td>
+        <td>立位到達後、300msウィンドウ内の左右偏倚変動幅が <strong>2.5% 以内</strong> に収まったフレーム。</td>
+        <td>安定化相（Stabilization Phase）。立位姿勢制御能力・ふらつきの評価。</td>
+      </tr>
+      <tr>
+        <td><strong>⑤ 離臀失敗<br>(Failed Attempt)</strong></td>
+        <td>試行間の着座インターバル中に、座位底から <strong>15%以上浮上したが70%に届かず</strong> 再度着座した小山動作。</td>
+        <td>立ち上がり不成功動作。筋力不足やバランス喪失による中断試行の同定。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>5. 30秒立ち座り（30s-STS）専用仕様</h2>
+  <div class="highlight-box">
+    <strong>30s-STS の運用フロー・独自機能:</strong>
+    <ol>
+      <li><strong>動画読み込み後の総数入力・確定機能:</strong> 動画および骨格追跡のプレビューを確認した上で、検者が立ち上がり総数（1〜60回）を数値入力または＋/−ボタンで調整・反映可能。不足分は立位候補ピークから優先補完される。</li>
+      <li><strong>3イベント特化型UI:</strong> 30s-STSでは「立位安定」を除外し、「開始」「離臀」「終了」の3イベントのみをオーバーレイ表示・スライダー微調整可能。</li>
+      <li><strong>厳格な30秒ウィンドウ制限:</strong> 第1回立ち上がりの開始時刻 $T_0$ に対し、$T_0 + 30,000\text{ms}$ を超えて立ち上がりが完了した試行（6回目等）は、試行リストおよびカウントから自動的に除外される。</li>
+    </ol>
+  </div>
+
+  <h2>6. データ可視化・グラフ仕様</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 30%;">グラフカード名称</th>
+        <th style="width: 70%;">表示要素および可視化ロジック</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>各回累積時間グラフ<br>(Cumulative Time Graph)</strong></td>
+        <td>
+          <ul>
+            <li><strong>累積所要時間（折れ線＋数値バッジ）:</strong> 第1回開始からの経過時間を試行ごとにプロット。</li>
+            <li><strong>各回立ち上がり時間（縦棒グラフ）:</strong> 各回の所要時間をシアン色の棒グラフで対比表示。</li>
+            <li><strong>30秒制限ライン:</strong> 30s-STS時は30秒到達位置に赤色破線を描画。</li>
+            <li><strong>サマリーメトリクス:</strong> 平均立ち上がり時間、最短試行、最長試行をバッジ表示。</li>
+          </ul>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>重心左右差グラフ<br>(Lateral Bias Graph)</strong></td>
+        <td>
+          <ul>
+            <li><strong>50%正中基準線:</strong> 破線による正中（左右均等）の明示。</li>
+            <li><strong>正中乖離バー:</strong> 左偏倚（50%超）は青色、右偏倚（50%未満）は橙色で直感的に色分け。</li>
+            <li><strong>平均偏倚推移線:</strong> 試行を通じた偏倚トレンドを破線でプロット。</li>
+            <li><strong>離臀時偏倚マーカー:</strong> 最も荷重がかかる離臀瞬間の偏倚を菱形（◆）で強調。</li>
+            <li><strong>左右比・バラツキ指標:</strong> 試行間平均（L:R比）および標準偏差（SD）を算出表示。</li>
+            <li><strong>横スクロール対応:</strong> 7試行以上の多数試行でも可読性を維持。</li>
+          </ul>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>7. データ出力・CSVエクスポート仕様</h2>
+  <p>
+    解析結果は、国際学会や電子カルテへの連携を想定したUTF-8 CSVフォーマットで出力される。
+  </p>
+  <ul>
+    <li><strong>ヘッダーメタ情報:</strong> 計測日時、計測モード（Single / 5STS / 30s-STS）、被験者パラメータ（身長・体重）、カメラ向き（Front / Back）。</li>
+    <li><strong>全体サマリー行:</strong> トータル所要時間、30秒内完了回数、総試行数、成功試行数、失敗試行数、成功率（%）、失敗率（%）。</li>
+    <li><strong>各試行サマリー行（Rep 1〜N）:</strong> 開始・離臀・終了・安定時刻、各フェーズ所要時間、累積所要時間（CumulativeTime_s）、各イベント時の左右偏倚率、試行内平均偏倚率、ピーク鉛直床反力（%BW, N）、ピーク左右制動力（%BW, N）。</li>
+    <li><strong>フレーム時系列データ行:</strong> 全フレームのTimestamp (ms)、MediaPipe 33ランドマーク座標 (X, Y, Z)、身体重心 (CoM_X, CoM_Y)、推定床反力サンプル、左右偏倚率、現在の動作フェーズ名称。</li>
+  </ul>
+
+</body>
+</html>
