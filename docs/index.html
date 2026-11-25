@@ -906,23 +906,58 @@
       const file = e.target.files[0];
       if (!file) return;
 
-      const url = URL.createObjectURL(file);
-      video.src = url;
-      video.classList.remove("hidden");
-      placeholder.classList.add("hidden");
-      playPauseBtn.disabled = false;
-      stepPrevBtn.disabled = false;
-      stepNextBtn.disabled = false;
-      seekBar.disabled = false;
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "動画ファイルを読み込み中...";
 
-      await video.play().catch(() => {});
-      video.pause();
+      try {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        video.classList.remove("hidden");
+        placeholder.classList.add("hidden");
 
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      applyMirrorTransform();
+        // 動画のメタデータおよびデータ読み込みを確実に待機
+        await new Promise((resolve) => {
+          if (video.readyState >= 2 && video.videoWidth > 0 && !isNaN(video.duration)) {
+            resolve();
+          } else {
+            let resolved = false;
+            const onReady = () => {
+              if (!resolved) {
+                resolved = true;
+                video.removeEventListener("loadeddata", onReady);
+                video.removeEventListener("loadedmetadata", onReady);
+                video.removeEventListener("canplay", onReady);
+                resolve();
+              }
+            };
+            video.addEventListener("loadeddata", onReady);
+            video.addEventListener("loadedmetadata", onReady);
+            video.addEventListener("canplay", onReady);
+            setTimeout(onReady, 3500); // 最大3.5秒でフォールバック
+          }
+        });
 
-      await extractFramesAndAnalyze();
+        // デコーダウォームアップ
+        try {
+          await video.play();
+          video.pause();
+        } catch (_) {}
+
+        canvas.width = video.videoWidth > 0 ? video.videoWidth : 640;
+        canvas.height = video.videoHeight > 0 ? video.videoHeight : 480;
+        applyMirrorTransform();
+
+        playPauseBtn.disabled = false;
+        stepPrevBtn.disabled = false;
+        stepNextBtn.disabled = false;
+        seekBar.disabled = false;
+
+        await extractFramesAndAnalyze();
+      } catch (err) {
+        console.error("Video load error:", err);
+        alert("動画の読み込み中にエラーが発生しました: " + err.message);
+        loadingOverlay.classList.add("hidden");
+      }
     };
 
     // Camera Toggle
@@ -950,65 +985,113 @@
       }
     };
 
+    // Safe Video Seek Helper with Timeout
+    function seekVideoPromise(targetTimeSec) {
+      return new Promise((resolve) => {
+        if (Math.abs(video.currentTime - targetTimeSec) < 0.015) {
+          resolve();
+          return;
+        }
+
+        let done = false;
+        const cleanup = () => {
+          if (!done) {
+            done = true;
+            video.removeEventListener("seeked", onSeeked);
+            resolve();
+          }
+        };
+        const onSeeked = () => cleanup();
+
+        video.addEventListener("seeked", onSeeked, { once: true });
+        video.currentTime = targetTimeSec;
+
+        // 最大250msで必ずタイムアウトして次へ（フリーズ防止）
+        setTimeout(cleanup, 250);
+      });
+    }
+
     // Frame Extraction & Pose Detection
     async function extractFramesAndAnalyze() {
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "MediaPipe AIモデルを準備中...";
+
+      // MediaPipe 初期化の待機
       if (!poseLandmarker) {
-        alert("MediaPipeの初期化中です。数秒後にもう一度お試しください。");
-        return;
+        let waitCount = 0;
+        while (!poseLandmarker && waitCount < 40) {
+          await new Promise(r => setTimeout(r, 250));
+          waitCount++;
+        }
+        if (!poseLandmarker) {
+          alert("MediaPipeの初期化に失敗しました。ページを再読み込みしてください。");
+          loadingOverlay.classList.add("hidden");
+          return;
+        }
       }
 
-      loadingOverlay.classList.remove("hidden");
       progressText.innerText = "動画を解析中... 0%";
 
-      const duration = video.duration || 10;
-      const targetFps = 25.0;
-      const stepMs = 1000.0 / targetFps;
-      const totalSteps = Math.floor((duration * 1000) / stepMs);
+      try {
+        const rawDur = video.duration;
+        const duration = (rawDur && !isNaN(rawDur) && rawDur > 0) ? rawDur : 10;
+        const targetFps = 25.0;
+        const stepMs = 1000.0 / targetFps;
+        const totalSteps = Math.max(5, Math.floor((duration * 1000) / stepMs));
 
-      rawExtractedFrames = [];
-      const offCanvas = document.createElement("canvas");
-      offCanvas.width = video.videoWidth;
-      offCanvas.height = video.videoHeight;
-      const offCtx = offCanvas.getContext("2d");
+        rawExtractedFrames = [];
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = video.videoWidth > 0 ? video.videoWidth : 640;
+        offCanvas.height = video.videoHeight > 0 ? video.videoHeight : 480;
+        const offCtx = offCanvas.getContext("2d", { willReadFrequently: true });
 
-      for (let i = 0; i <= totalSteps; i++) {
-        const timeMs = Math.round(i * stepMs);
-        video.currentTime = timeMs / 1000.0;
-        await new Promise(resolve => video.onseeked = resolve);
+        for (let i = 0; i <= totalSteps; i++) {
+          const timeMs = Math.round(i * stepMs);
+          await seekVideoPromise(timeMs / 1000.0);
 
-        offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
-        const result = poseLandmarker.detectForVideo(offCanvas, timeMs);
+          offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+          let result = null;
+          try {
+            result = poseLandmarker.detectForVideo(offCanvas, timeMs);
+          } catch (e) {
+            console.warn(`Frame detection warning at ${timeMs}ms:`, e);
+          }
 
-        const lmMap = {};
-        if (result.landmarks && result.landmarks[0]) {
-          result.landmarks[0].forEach((lm, idx) => {
-            lmMap[idx] = new Point2D(lm.x, lm.y);
-          });
+          const lmMap = {};
+          if (result && result.landmarks && result.landmarks[0]) {
+            result.landmarks[0].forEach((lm, idx) => {
+              lmMap[idx] = new Point2D(lm.x, lm.y);
+            });
+          }
+
+          const worldLmMap = {};
+          if (result && result.worldLandmarks && result.worldLandmarks[0]) {
+            result.worldLandmarks[0].forEach((wlm, idx) => {
+              worldLmMap[idx] = new Point3D(wlm.x, wlm.y, wlm.z, wlm.visibility);
+            });
+          }
+
+          rawExtractedFrames.push(new PoseFrameData({
+            timestampMs: timeMs,
+            landmarks: lmMap,
+            worldLandmarks: worldLmMap
+          }));
+
+          if (i % 6 === 0) {
+            const pct = Math.round((i / totalSteps) * 100);
+            progressText.innerText = `動画を解析中... ${pct}%`;
+          }
         }
 
-        const worldLmMap = {};
-        if (result.worldLandmarks && result.worldLandmarks[0]) {
-          result.worldLandmarks[0].forEach((wlm, idx) => {
-            worldLmMap[idx] = new Point3D(wlm.x, wlm.y, wlm.z, wlm.visibility);
-          });
-        }
+        video.currentTime = 0;
+        loadingOverlay.classList.add("hidden");
 
-        rawExtractedFrames.push(new PoseFrameData({
-          timestampMs: timeMs,
-          landmarks: lmMap,
-          worldLandmarks: worldLmMap
-        }));
-
-        if (i % 8 === 0) {
-          const pct = Math.round((i / totalSteps) * 100);
-          progressText.innerText = `動画を解析中... ${pct}%`;
-        }
+        runFullAnalysis();
+      } catch (err) {
+        console.error("Frame extraction error:", err);
+        alert("動画解析中にエラーが発生しました: " + err.message);
+        loadingOverlay.classList.add("hidden");
       }
-
-      video.currentTime = 0;
-      loadingOverlay.classList.add("hidden");
-
-      runFullAnalysis();
     }
 
     function runFullAnalysis() {

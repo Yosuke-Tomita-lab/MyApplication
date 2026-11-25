@@ -644,19 +644,6 @@ export class StsMetricCalculator {
     return Math.acos(cosVal) * (180.0 / Math.PI);
   }
 
-      return new PoseFrameData({
-        ...frame,
-        landmarks: lm,
-        comX,
-        comY,
-        midBaseX,
-        baseWidth,
-        leftBiasPercent: leftBias,
-        rightBiasPercent: 100.0 - leftBias
-      });
-    });
-  }
-
   static buildSingleTrialMetrics({
     repIndex,
     frames,

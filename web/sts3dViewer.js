@@ -462,6 +462,10 @@ export class Sts3dViewer {
 
   positionCylinderBetweenPoints(mesh, p1, p2) {
     const distance = p1.distanceTo(p2);
+    if (distance < 0.005) {
+      mesh.visible = false;
+      return;
+    }
     mesh.scale.set(1, Math.max(0.01, distance), 1);
 
     const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
