@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261125_13";
+} from "./stsModels.js?v=20261125_14";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -594,8 +594,9 @@ export class StsMetricCalculator {
           z: (wLAnk.z + wRAnk.z) / 2
         } : midKnee3D;
 
-        midAnkleZ = midAnk3D.z;
-        comZ = 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z;
+        const zScale = 0.52;
+        midAnkleZ = midAnk3D.z * zScale;
+        comZ = (0.20 * midSh3D.z + 0.65 * midHip3D.z + 0.15 * midAnk3D.z) * zScale;
 
         const dyTrunk = Math.abs(midSh3D.y - midHip3D.y);
         const dzTrunk = Math.abs(midSh3D.z - midHip3D.z);
