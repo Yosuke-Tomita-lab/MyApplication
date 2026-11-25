@@ -277,8 +277,7 @@ export class Sts3dViewer {
 
   loadFrames(frames) {
     this.allFrames = frames || [];
-    this.globalAnkleRef = this.computeGlobalAnkleAnchor(this.allFrames);
-    this.smoothedFrames = this.generateSmoothedFrames(this.allFrames, this.globalAnkleRef);
+    this.smoothedFrames = this.generateSmoothedFrames(this.allFrames);
     this.updateTrajectoryCurve();
     if (this.smoothedFrames.length > 0) {
       this.updateFrame(this.smoothedFrames[0]);
@@ -407,16 +406,19 @@ export class Sts3dViewer {
   }
 
   getAnkleReference(wlm) {
-    if (this.globalAnkleRef) return this.globalAnkleRef;
     if (!wlm) return { x: 0, y: 0.85, z: 0 };
     const ankL = wlm[27];
     const ankR = wlm[28];
     if (ankL && ankR) {
       return {
         x: (ankL.x + ankR.x) / 2,
-        y: Math.max(ankL.y, ankR.y),
+        y: (ankL.y + ankR.y) / 2,
         z: (ankL.z + ankR.z) / 2
       };
+    } else if (ankL) {
+      return { x: ankL.x, y: ankL.y, z: ankL.z };
+    } else if (ankR) {
+      return { x: ankR.x, y: ankR.y, z: ankR.z };
     }
     return { x: 0, y: 0.85, z: 0 };
   }
@@ -424,9 +426,10 @@ export class Sts3dViewer {
   transformWorldPoint(pt, ref) {
     if (!pt) return null;
     const xVal = pt.x - ref.x;
+    const yVal = Math.max(0.01, (ref.y - pt.y) + 0.05); // 足部接地位置 Y=0.05m（床面上）、床下に潜らない
     return new THREE.Vector3(
       this.isMirrored ? -xVal : xVal, // 左右反転のみをシンプルに適用
-      (ref.y - pt.y) + 0.05,          // 垂直方向: 足首接地位置 Y=0.05m（床面）から上方へ自然に立ち上がる
+      yVal,                           // 垂直方向: 足部基準で身体・腰が上方へ自然に立ち上がる
       -(pt.z - ref.z)                 // 前後方向: MediaPipe本来の自然な奥行き
     );
   }
