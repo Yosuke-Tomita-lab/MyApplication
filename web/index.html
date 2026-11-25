@@ -20,27 +20,67 @@
     @media print {
       @page {
         size: A4 portrait;
-        margin: 8mm 10mm 8mm 10mm;
+        margin: 6mm 8mm 6mm 8mm;
       }
-      body {
-        background-color: white !important;
-        color: #0f172a !important;
+      html, body {
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
+        background: white !important;
+        color: #0f172a !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
+        overflow: visible !important;
       }
-      header, main, #reportPreviewModal, .no-print {
+      header, main, .no-print {
         display: none !important;
+      }
+      #reportPreviewModal {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
+        z-index: auto !important;
+      }
+      #reportPreviewModal > div {
+        box-shadow: none !important;
+        border: none !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        width: 100% !important;
+        height: auto !important;
+        border-radius: 0 !important;
+        overflow: visible !important;
+        background: transparent !important;
+      }
+      #reportPreviewModal > div > div:first-child {
+        display: none !important; /* Hide modal header during print */
+      }
+      #reportPreviewModal > div > div:last-child {
+        padding: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
       }
       #a4PrintContainer {
         display: block !important;
         width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
         box-shadow: none !important;
         border: none !important;
-        padding: 0 !important;
+        border-radius: 0 !important;
+        background: white !important;
         page-break-after: avoid;
         page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
   </style>
@@ -1176,7 +1216,11 @@
     };
 
     triggerPrintBtn.onclick = () => {
-      window.print();
+      if (!analysisResult) return;
+      generateA4Report();
+      setTimeout(() => {
+        window.print();
+      }, 150);
     };
 
     function generateA4Report() {
