@@ -127,30 +127,30 @@ export class Sts3dViewer {
       color: 0x475569,
       roughness: 0.6,
       transparent: true,
-      opacity: 0.5
+      opacity: 0.45
     });
 
-    // Seat (40cm height, 42x42cm)
+    // Seat (42cm height, 42x42cm) positioned behind ankles (Ankles at Z=0)
     const seatGeo = new THREE.BoxGeometry(0.42, 0.04, 0.42);
     const seat = new THREE.Mesh(seatGeo, chairMat);
-    seat.position.set(0, 0.40, -0.15);
+    seat.position.set(0, 0.42, -0.28);
     this.chairGroup.add(seat);
 
     // Backrest
     const backGeo = new THREE.BoxGeometry(0.42, 0.45, 0.03);
     const back = new THREE.Mesh(backGeo, chairMat);
-    back.position.set(0, 0.65, -0.35);
+    back.position.set(0, 0.68, -0.48);
     this.chairGroup.add(back);
 
     // Legs
-    const legGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.40);
+    const legGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.42);
     const legOffsets = [
-      [-0.18, -0.05], [0.18, -0.05],
-      [-0.18, -0.34], [0.18, -0.34]
+      [-0.18, -0.09], [0.18, -0.09],
+      [-0.18, -0.47], [0.18, -0.47]
     ];
     legOffsets.forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(legGeo, chairMat);
-      leg.position.set(lx, 0.20, lz);
+      leg.position.set(lx, 0.21, lz);
       this.chairGroup.add(leg);
     });
 
@@ -275,19 +275,29 @@ export class Sts3dViewer {
     this.comFloorMarker.position.y = 0.002;
     this.scene.add(this.comFloorMarker);
 
-    // 4. CoM Trajectory Ribbon
-    const maxTrailPoints = 300;
+    // 4. CoM 3D Trajectory in Space (Golden Line)
+    const maxTrailPoints = 400;
     const trajPositions = new Float32Array(maxTrailPoints * 3);
     const trajGeo = new THREE.BufferGeometry();
     trajGeo.setAttribute("position", new THREE.BufferAttribute(trajPositions, 3));
     const trajMat = new THREE.LineBasicMaterial({
-      color: 0xfacc15,
-      linewidth: 3,
-      transparent: true,
-      opacity: 0.75
+      color: 0xfbbf24, // Bright Gold
+      linewidth: 4
     });
     this.comTrajectoryLine = new THREE.Line(trajGeo, trajMat);
     this.scene.add(this.comTrajectoryLine);
+
+    // 5. CoM Floor Shadow Trajectory (Projection line on the floor to see BoS relationship)
+    const floorTrajPositions = new Float32Array(maxTrailPoints * 3);
+    const floorTrajGeo = new THREE.BufferGeometry();
+    floorTrajGeo.setAttribute("position", new THREE.BufferAttribute(floorTrajPositions, 3));
+    const floorTrajMat = new THREE.LineDashedMaterial({
+      color: 0xca8a04,
+      dashSize: 0.03,
+      gapSize: 0.015
+    });
+    this.comFloorTrajectoryLine = new THREE.Line(floorTrajGeo, floorTrajMat);
+    this.scene.add(this.comFloorTrajectoryLine);
   }
 
   loadFrames(frames) {
@@ -302,7 +312,7 @@ export class Sts3dViewer {
     if (!this.allFrames || this.allFrames.length === 0) return;
 
     const points = [];
-    for (let i = 0; i < this.allFrames.length; i += 2) {
+    for (let i = 0; i < this.allFrames.length; i++) {
       const f = this.allFrames[i];
       const pos = this.getFrameCom3D(f);
       if (pos) points.push(pos);
@@ -311,38 +321,66 @@ export class Sts3dViewer {
     if (points.length < 2) return;
 
     const posAttr = this.comTrajectoryLine.geometry.attributes.position;
+    const floorPosAttr = this.comFloorTrajectoryLine.geometry.attributes.position;
     const count = Math.min(points.length, posAttr.count);
+
     for (let i = 0; i < count; i++) {
       posAttr.setXYZ(i, points[i].x, points[i].y, points[i].z);
+      floorPosAttr.setXYZ(i, points[i].x, 0.002, points[i].z);
     }
     this.comTrajectoryLine.geometry.setDrawRange(0, count);
+    this.comFloorTrajectoryLine.geometry.setDrawRange(0, count);
     posAttr.needsUpdate = true;
+    floorPosAttr.needsUpdate = true;
+    this.comFloorTrajectoryLine.computeLineDistances();
+  }
+
+  getAnkleReference(wlm) {
+    if (!wlm) return { x: 0, y: 0.85, z: 0 };
+    const ankL = wlm[27];
+    const ankR = wlm[28];
+    if (ankL && ankR) {
+      return {
+        x: (ankL.x + ankR.x) / 2,
+        y: Math.max(ankL.y, ankR.y), // MediaPipe: Y is downward, so bottom of feet has maximum Y
+        z: (ankL.z + ankR.z) / 2
+      };
+    }
+    if (ankL) return { x: ankL.x, y: ankL.y, z: ankL.z };
+    if (ankR) return { x: ankR.x, y: ankR.y, z: ankR.z };
+    return { x: 0, y: 0.85, z: 0 };
+  }
+
+  transformWorldPoint(pt, ref) {
+    if (!pt) return null;
+    return new THREE.Vector3(
+      pt.x - ref.x,              // Lateral: Centered at midpoint of ankles (X=0)
+      (ref.y - pt.y) + 0.05,     // Vertical: Ankles grounded at floor Y=0.05m; body rises as hips/knees extend!
+      -(pt.z - ref.z)            // Anterior-Posterior: Ankles at Z=0; seated trunk is behind (Z<0), leans forward to Z~0
+    );
   }
 
   getFrameCom3D(frame) {
     if (!frame) return null;
     const wlm = frame.worldLandmarks;
     if (wlm && wlm[23] && wlm[24] && wlm[11] && wlm[12]) {
-      // Coordinate transform: MediaPipe worldLandmarks has Y downwards and Z depth.
-      // In Three.js: X is right, Y is up, Z is forward/out-of-screen.
-      const midShX = (wlm[11].x + wlm[12].x) / 2;
-      const midShY = -(wlm[11].y + wlm[12].y) / 2;
-      const midShZ = -(wlm[11].z + wlm[12].z) / 2;
+      const ref = this.getAnkleReference(wlm);
 
-      const midHipX = (wlm[23].x + wlm[24].x) / 2;
-      const midHipY = -(wlm[23].y + wlm[24].y) / 2;
-      const midHipZ = -(wlm[23].z + wlm[24].z) / 2;
+      const pShL = this.transformWorldPoint(wlm[11], ref);
+      const pShR = this.transformWorldPoint(wlm[12], ref);
+      const pHipL = this.transformWorldPoint(wlm[23], ref);
+      const pHipR = this.transformWorldPoint(wlm[24], ref);
+      const pAnkL = wlm[27] ? this.transformWorldPoint(wlm[27], ref) : pHipL;
+      const pAnkR = wlm[28] ? this.transformWorldPoint(wlm[28], ref) : pHipR;
 
-      const midAnkX = (wlm[27] && wlm[28]) ? (wlm[27].x + wlm[28].x) / 2 : midHipX;
-      const midAnkY = (wlm[27] && wlm[28]) ? -(wlm[27].y + wlm[28].y) / 2 : 0;
-      const midAnkZ = (wlm[27] && wlm[28]) ? -(wlm[27].z + wlm[28].z) / 2 : midHipZ;
+      const midSh = new THREE.Vector3().addVectors(pShL, pShR).multiplyScalar(0.5);
+      const midHip = new THREE.Vector3().addVectors(pHipL, pHipR).multiplyScalar(0.5);
+      const midAnk = new THREE.Vector3().addVectors(pAnkL, pAnkR).multiplyScalar(0.5);
 
-      // Ankle grounding: shift Y so lowest ankle is near 0.05m
-      const floorOffsetY = Math.max(0, -midAnkY + 0.08);
-
-      const cx = 0.35 * midShX + 0.35 * midHipX + 0.30 * midAnkX;
-      const cy = 0.35 * midShY + 0.35 * midHipY + 0.30 * midAnkY + floorOffsetY;
-      const cz = 0.35 * midShZ + 0.35 * midHipZ + 0.30 * midAnkZ;
+      // 3-segment biomechanical CoM model (Trunk/Head 35%, Pelvis/Thigh 35%, Shank/Foot 30%)
+      const cx = 0.35 * midSh.x + 0.35 * midHip.x + 0.30 * midAnk.x;
+      const cy = 0.35 * midSh.y + 0.35 * midHip.y + 0.30 * midAnk.y;
+      const cz = 0.35 * midSh.z + 0.35 * midHip.z + 0.30 * midAnk.z;
 
       return new THREE.Vector3(cx, cy, cz);
     }
@@ -359,21 +397,11 @@ export class Sts3dViewer {
 
     const wlm = frame.worldLandmarks;
     const has3D = wlm && Object.keys(wlm).length >= 10;
-
-    let floorOffsetY = 0.85; // Default grounding shift
-
-    if (has3D && wlm[27] && wlm[28]) {
-      const minAnkleY = Math.min(-wlm[27].y, -wlm[28].y);
-      floorOffsetY = -minAnkleY + 0.05;
-    }
+    const ref = this.getAnkleReference(wlm);
 
     const get3DPos = (idx) => {
       if (has3D && wlm[idx]) {
-        return new THREE.Vector3(
-          wlm[idx].x,
-          -wlm[idx].y + floorOffsetY,
-          -wlm[idx].z
-        );
+        return this.transformWorldPoint(wlm[idx], ref);
       }
       // Fallback
       const lm2 = frame.landmarks[idx];

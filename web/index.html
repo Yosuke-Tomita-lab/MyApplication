@@ -744,10 +744,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_09";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_09";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_09";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_09";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_10";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_10";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_10";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_10";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -1708,10 +1708,76 @@
         ctx.fill();
       }
 
-      // Draw Center of Mass (CoM: 🟡)
+      // --- Draw 2D Center of Mass (CoM) Full Trajectory & Progress Trail ---
+      const frames = analysisResult.frames;
+      if (frames && frames.length > 1) {
+        // 1. Overall CoM Trajectory Path (Light dashed trail across the whole trial)
+        ctx.save();
+        ctx.strokeStyle = "rgba(234, 179, 8, 0.4)";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i < frames.length; i++) {
+          const fx = frames[i].comX * w;
+          const fy = frames[i].comY * h;
+          if (i === 0) ctx.moveTo(fx, fy);
+          else ctx.lineTo(fx, fy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Active CoM Trajectory Trail up to the current timestamp
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = "rgba(245, 158, 11, 0.8)";
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < frames.length; i++) {
+          if (frames[i].timestampMs > currentMs) break;
+          const fx = frames[i].comX * w;
+          const fy = frames[i].comY * h;
+          if (!started) {
+            ctx.moveTo(fx, fy);
+            started = true;
+          } else {
+            ctx.lineTo(fx, fy);
+          }
+        }
+        if (started) ctx.stroke();
+        ctx.restore();
+
+        // 3. Key Milestone CoM Markers (Seat-off & Stand-end for active trial)
+        const currentTrial = analysisResult.trials[selectedTrialIdx] || analysisResult.trials[0];
+        if (currentTrial) {
+          const fSeat = StsMetricCalculator.nearestFrame(frames, currentTrial.seatOffTimeMs);
+          if (fSeat) {
+            ctx.fillStyle = "#fb923c"; // Orange for Seat-off
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(fSeat.comX * w, fSeat.comY * h, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+          const fEnd = StsMetricCalculator.nearestFrame(frames, currentTrial.standEndTimeMs);
+          if (fEnd) {
+            ctx.fillStyle = "#22c55e"; // Green for Stand-end
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(fEnd.comX * w, fEnd.comY * h, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw Center of Mass (CoM: 🟡 Current Frame Indicator)
       ctx.fillStyle = "#eab308";
       ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.arc(frame.comX * w, frame.comY * h, 9, 0, Math.PI * 2);
       ctx.fill();
