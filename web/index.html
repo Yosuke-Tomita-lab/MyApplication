@@ -116,7 +116,9 @@
       var b = document.getElementById('globalErrorBanner');
       var m = document.getElementById('globalErrorMessage');
       if (b && m) {
-        m.innerText = 'スクリプトエラー: ' + (e.message || e);
+        var src = e.filename ? e.filename.split('/').pop() : '';
+        var loc = src ? ('[' + src + (e.lineno ? ':' + e.lineno : '') + '] ') : '';
+        m.innerText = 'スクリプトエラー: ' + loc + (e.message || e);
         b.classList.remove('hidden');
       }
     });
@@ -722,10 +724,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_06";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_06";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_06";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_06";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_07";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_07";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_07";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_07";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -890,13 +892,6 @@
         viewport3d.classList.remove("hidden");
         viewportsWrapper.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
         ensure3dViewerInitialized();
-        if (sts3dViewer) sts3dViewer.onResize();
-      }
-    }
-      } else if (mode === "split") {
-        viewport2d.classList.remove("hidden");
-        viewport3d.classList.remove("hidden");
-        viewportsWrapper.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
         if (sts3dViewer) sts3dViewer.onResize();
       }
     }
