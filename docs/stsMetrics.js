@@ -126,8 +126,11 @@ export class StsMetricCalculator {
     );
 
     let overallTotalSec = null;
-    if (mode.id === "FIVE_TIMES" && trials.length >= 5) {
-      overallTotalSec = Math.max(0, (trials[4].stableTimeMs - trials[0].startTimeMs) / 1000.0);
+    if (mode.id === "SINGLE" && trials.length > 0) {
+      overallTotalSec = trials[0].totalDurationSec;
+    } else if (mode.id === "FIVE_TIMES" && trials.length > 0) {
+      const lastTrial = trials[Math.min(trials.length - 1, 4)];
+      overallTotalSec = Math.max(0, (lastTrial.stableTimeMs - trials[0].startTimeMs) / 1000.0);
     } else if (mode.id === "THIRTY_SECONDS" && trials.length > 0) {
       const t0 = trials[0].startTimeMs;
       const lastTime = trials[trials.length - 1].standEndTimeMs;
