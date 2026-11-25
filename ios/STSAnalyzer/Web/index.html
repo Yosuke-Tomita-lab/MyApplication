@@ -314,44 +314,54 @@
         </div>
       </div>
 
-      <!-- STEP 3: Video & LiDAR Input -->
+      <!-- STEP 3: Video & SMPL / LiDAR Input -->
       <div class="pt-2 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
           <div>
-            <div class="text-xs font-bold text-slate-900 flex items-center gap-2">
-              <span>動画ファイル ＆ LiDAR深度データ</span>
+            <div class="text-xs font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+              <span>動画ファイル ＆ SMPL / LiDAR 連携</span>
+              <span id="smplStatusBadge" class="hidden text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-indigo-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                SMPLパラメトリック人体メッシュ (4D-Humans) 連動中
+              </span>
               <span id="lidarStatusBadge" class="hidden text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 LiDAR実測深度 連動中
               </span>
             </div>
-            <div class="text-[11px] text-slate-400 mt-0.5">動画のみで解析可能 / iPhone Pro等のLiDAR深度(JSON/CSV/動画)追加でミリ精度化</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">動画のみで解析可能 / 4D-Humans (HMR 2.0) の SMPL 3Dメッシュ(JSON)で解剖学的最高精度化</div>
           </div>
         </div>
 
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <input type="file" id="videoFileInput" accept="video/*" class="sr-only">
           <input type="file" id="cameraDirectInput" accept="video/*" capture="environment" class="sr-only">
+          <input type="file" id="smplFileInput" accept=".json" class="sr-only">
           <input type="file" id="lidarFileInput" accept=".json,.csv,video/*" class="sr-only">
 
-          <button id="directCameraBtn" type="button" class="cursor-pointer px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-200 transition flex items-center gap-2" title="iPadのカメラを起動してその場で撮影">
+          <button id="directCameraBtn" type="button" class="cursor-pointer px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-200 transition flex items-center gap-1.5" title="iPadのカメラを起動してその場で撮影">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            <span>カメラで直接撮影して解析</span>
+            <span>カメラで撮影</span>
           </button>
 
-          <button id="selectVideoBtn" type="button" class="cursor-pointer px-3.5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-200 transition flex items-center gap-2" title="既にiPad内に保存されている動画を選択">
+          <button id="selectVideoBtn" type="button" class="cursor-pointer px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-200 transition flex items-center gap-1.5" title="既にiPad内に保存されている動画を選択">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-            <span id="selectVideoBtnText">保存済み動画を選択</span>
+            <span id="selectVideoBtnText">動画を選択</span>
           </button>
 
-          <button id="selectLidarBtn" type="button" class="cursor-pointer px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition flex items-center gap-1.5" title="iPhone/iPad等のLiDAR深度データ(JSON/CSV)を追加">
-            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
-            <span id="selectLidarBtnText">+ LiDAR深度</span>
+          <button id="selectSmplBtn" type="button" class="cursor-pointer px-3.5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl border border-indigo-200 transition flex items-center gap-1.5" title="4D-Humans (HMR 2.0) から出力した SMPL パラメトリックメッシュ JSON をインポート">
+            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"/></svg>
+            <span id="selectSmplBtnText">+ SMPL (4D-Humans)</span>
           </button>
 
-          <button id="clearLidarBtn" type="button" class="hidden text-slate-400 hover:text-rose-500 p-2 text-xs" title="LiDARデータを解除">
-            &times; 解除
+          <button id="selectLidarBtn" type="button" class="cursor-pointer px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition flex items-center gap-1" title="iPhone/iPad等のLiDAR深度データ(JSON/CSV)を追加">
+            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+            <span id="selectLidarBtnText">+ LiDAR</span>
+          </button>
+
+          <button id="clearLidarBtn" type="button" class="hidden text-slate-400 hover:text-rose-500 p-1.5 text-xs" title="LiDARデータを解除">
+            &times;
           </button>
         </div>
       </div>
@@ -807,10 +817,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_21";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_21";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_21";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_21";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_22";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_22";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_22";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_22";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -843,6 +853,75 @@
     const cameraDirectInput = document.getElementById("cameraDirectInput");
     if (directCameraBtn && cameraDirectInput) {
       directCameraBtn.onclick = () => cameraDirectInput.click();
+    }
+
+    // SMPL (4D-Humans) Controls
+    let isSmplDataActive = false;
+    const smplFileInput = document.getElementById("smplFileInput");
+    const selectSmplBtn = document.getElementById("selectSmplBtn");
+    const selectSmplBtnText = document.getElementById("selectSmplBtnText");
+    const smplStatusBadge = document.getElementById("smplStatusBadge");
+
+    if (selectSmplBtn && smplFileInput) {
+      selectSmplBtn.onclick = () => smplFileInput.click();
+    }
+
+    if (smplFileInput) {
+      smplFileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          const smplData = JSON.parse(text);
+          let frames = Array.isArray(smplData) ? smplData : (smplData.frames || smplData.data);
+          if (!frames || frames.length < 5) {
+            throw new Error("有効なSMPLフレーム配列が見つかりません。");
+          }
+
+          rawExtractedFrames = frames.map(f => {
+            const lmMap = {};
+            if (f.landmarks) {
+              for (const [k, pt] of Object.entries(f.landmarks)) {
+                lmMap[parseInt(k, 10)] = new Point2D(pt.x, pt.y);
+              }
+            }
+            const wlmMap = {};
+            if (f.worldLandmarks) {
+              for (const [k, pt] of Object.entries(f.worldLandmarks)) {
+                wlmMap[parseInt(k, 10)] = new Point3D(pt.x, pt.y, pt.z, pt.visibility || 0.99);
+              }
+            }
+            return new PoseFrameData({
+              timestampMs: f.timestampMs,
+              landmarks: lmMap,
+              worldLandmarks: wlmMap,
+              comX: f.com ? f.com.x : undefined,
+              comY: f.com ? f.com.y : undefined,
+              comZ: f.com ? f.com.z : undefined,
+              isSmplMesh: true
+            });
+          });
+
+          isSmplDataActive = true;
+          if (smplStatusBadge) {
+            smplStatusBadge.classList.remove("hidden");
+            smplStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span> SMPL人体メッシュ (4D-Humans) 連動中 (${rawExtractedFrames.length}フレーム)`;
+          }
+          if (selectSmplBtnText) selectSmplBtnText.innerText = "SMPL読込済";
+          if (selectSmplBtn) selectSmplBtn.classList.add("bg-indigo-100", "border-indigo-400");
+
+          const splitBtn = document.getElementById("viewModeSplitBtn");
+          if (splitBtn && currentViewMode === "2d") {
+            splitBtn.click();
+          }
+          runFullAnalysis();
+          alert(`4D-Humans (SMPL) 解析データ（${rawExtractedFrames.length}フレーム）をインポートしました！\n解剖学的パラメトリック人体メッシュと真のCoM重心が反映されました。`);
+        } catch (err) {
+          console.error("SMPL import error:", err);
+          alert("SMPLデータの読み込みに失敗しました: " + err.message);
+        }
+      };
     }
 
     // LiDAR Depth Controls
@@ -2610,7 +2689,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>システム:</strong> ${(rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)'}</div>
+              <div><strong>システム:</strong> ${isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)')}</div>
             </div>
           </div>
 
@@ -2768,7 +2847,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>解析システム:</strong> ${(rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)'}</div>
+              <div><strong>解析システム:</strong> ${isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)')}</div>
             </div>
           </div>
 
