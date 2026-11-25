@@ -343,14 +343,20 @@
 
         <!-- Viewport Header: 2D / 3D / Split Mode Toggle & Camera View Presets -->
         <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <!-- View Modes -->
-          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
-            <button id="viewMode2dBtn" class="px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">2D動画</button>
-            <button id="viewMode3dBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
-              3Dメッシュ
-            </button>
-            <button id="viewModeSplitBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition">並列表示 (2D + 3D)</button>
+          <!-- View Modes & Video Overlay Toggle -->
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button id="viewMode2dBtn" class="px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">2D骨格・軌跡</button>
+              <button id="viewMode3dBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                3Dメッシュ
+              </button>
+              <button id="viewModeSplitBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition">並列表示 (2D + 3D)</button>
+            </div>
+            <label class="hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium cursor-pointer ml-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-100 transition" title="背景に実写動画を重ねて表示します（デフォルトは非表示）">
+              <input type="checkbox" id="overlayVideoToggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5">
+              <span>実写動画を重ねる</span>
+            </label>
           </div>
 
           <!-- 3D Camera Angles (Active only when 3D is visible) -->
@@ -744,10 +750,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_10";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_10";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_10";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_10";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_12";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_12";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_12";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_12";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -785,6 +791,28 @@
     const timeDisplay = document.getElementById("timeDisplay");
     const exportCsvBtn = document.getElementById("exportCsvBtn");
     const openReportBtn = document.getElementById("openReportBtn");
+
+    // Video Overlay Visibility Control (デフォルト：実写動画は重ねない)
+    const overlayVideoToggle = document.getElementById("overlayVideoToggle");
+    function updateVideoVisibility() {
+      const showVideo = overlayVideoToggle ? overlayVideoToggle.checked : false;
+      if (video) {
+        if (showVideo) {
+          video.classList.remove("opacity-0");
+          video.style.opacity = "1";
+        } else {
+          video.classList.add("opacity-0");
+          video.style.opacity = "0";
+        }
+      }
+    }
+    if (overlayVideoToggle) {
+      overlayVideoToggle.checked = false; // デフォルト：実写動画は重ねない
+      overlayVideoToggle.onchange = () => {
+        updateVideoVisibility();
+        drawCurrentOverlay();
+      };
+    }
 
     // Report Modal Elements
     const reportPreviewModal = document.getElementById("reportPreviewModal");
@@ -1029,6 +1057,7 @@
         const url = URL.createObjectURL(file);
         video.src = url;
         video.classList.remove("hidden");
+        updateVideoVisibility();
         placeholder.classList.add("hidden");
 
         // 動画のメタデータおよびデータ読み込みを確実に待機
@@ -1084,6 +1113,7 @@
           const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
           video.srcObject = stream;
           video.classList.remove("hidden");
+          updateVideoVisibility();
           placeholder.classList.add("hidden");
           applyMirrorTransform();
           await video.play();
@@ -1607,25 +1637,58 @@
       });
     }
 
+    // Smooth 60fps Playback Render Loop with requestAnimationFrame
+    let animFrameId = null;
+    function renderLoop() {
+      if (!video.paused && !video.ended) {
+        const cur = video.currentTime;
+        const dur = video.duration || 1;
+        seekBar.value = Math.round((cur / dur) * 1000);
+        timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
+        drawCurrentOverlay();
+        animFrameId = requestAnimationFrame(renderLoop);
+      }
+    }
+
     // Video Playback & Overlay Drawing
     playPauseBtn.onclick = () => {
       if (video.paused) {
         video.play();
         playIcon.classList.add("hidden");
         pauseIcon.classList.remove("hidden");
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        animFrameId = requestAnimationFrame(renderLoop);
       } else {
         video.pause();
         playIcon.classList.remove("hidden");
         pauseIcon.classList.add("hidden");
+        if (animFrameId) cancelAnimationFrame(animFrameId);
       }
     };
 
+    video.onplay = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      animFrameId = requestAnimationFrame(renderLoop);
+    };
+
+    video.onpause = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+    };
+
+    video.onended = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      playIcon.classList.remove("hidden");
+      pauseIcon.classList.add("hidden");
+    };
+
     video.ontimeupdate = () => {
-      const cur = video.currentTime;
-      const dur = video.duration || 1;
-      seekBar.value = Math.round((cur / dur) * 1000);
-      timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
-      drawCurrentOverlay();
+      if (video.paused) {
+        const cur = video.currentTime;
+        const dur = video.duration || 1;
+        seekBar.value = Math.round((cur / dur) * 1000);
+        timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
+        drawCurrentOverlay();
+      }
     };
 
     seekBar.oninput = () => {
@@ -1634,19 +1697,64 @@
       drawCurrentOverlay();
     };
 
+    // Helper to get smoothly interpolated frame at currentMs for 2D overlay
+    function getInterpolated2DFrame(frames, currentMs) {
+      if (!frames || frames.length === 0) return null;
+      if (frames.length === 1 || currentMs <= frames[0].timestampMs) return frames[0];
+      const last = frames[frames.length - 1];
+      if (currentMs >= last.timestampMs) return last;
+
+      let i = 0;
+      while (i < frames.length - 1 && frames[i + 1].timestampMs <= currentMs) {
+        i++;
+      }
+      const f0 = frames[i];
+      const f1 = frames[i + 1];
+      const dt = f1.timestampMs - f0.timestampMs;
+      const alpha = dt > 0 ? Math.max(0, Math.min(1, (currentMs - f0.timestampMs) / dt)) : 0;
+
+      const interpLm = {};
+      if (f0.landmarks && f1.landmarks) {
+        for (const k in f0.landmarks) {
+          const p0 = f0.landmarks[k];
+          const p1 = f1.landmarks[k];
+          if (p0 && p1) {
+            interpLm[k] = {
+              x: p0.x + (p1.x - p0.x) * alpha,
+              y: p0.y + (p1.y - p0.y) * alpha
+            };
+          } else {
+            interpLm[k] = p0 || p1;
+          }
+        }
+      }
+
+      return {
+        ...f0,
+        timestampMs: currentMs,
+        landmarks: interpLm,
+        comX: f0.comX + (f1.comX - f0.comX) * alpha,
+        comY: f0.comY + (f1.comY - f0.comY) * alpha,
+        midBaseX: f0.midBaseX + (f1.midBaseX - f0.midBaseX) * alpha,
+        leftBiasPercent: f0.leftBiasPercent + (f1.leftBiasPercent - f0.leftBiasPercent) * alpha,
+        grf: f0.grf
+      };
+    }
+
     // Draw Skeleton, CoM, and BoS on Overlay Canvas & Update 3D Viewport
     function drawCurrentOverlay() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!analysisResult || analysisResult.frames.length === 0) return;
 
       const currentMs = Math.round(video.currentTime * 1000.0);
-      const frame = StsMetricCalculator.nearestFrame(analysisResult.frames, currentMs);
+      const frame = getInterpolated2DFrame(analysisResult.frames, currentMs) ||
+                    StsMetricCalculator.nearestFrame(analysisResult.frames, currentMs);
       if (!frame) return;
 
-      // Update 3D Mesh & Skeleton Model in Three.js Scene
+      // Update 3D Mesh & Skeleton Model in Three.js Scene with Sub-frame Interpolation (Lerp)
       if (sts3dViewer && currentViewMode !== "2d") {
         try {
-          sts3dViewer.updateFrame(frame);
+          sts3dViewer.updateAtTimestamp(currentMs);
         } catch (e) {
           console.warn("Failed to update 3D frame:", e);
         }
@@ -1679,6 +1787,29 @@
 
       const w = canvas.width;
       const h = canvas.height;
+
+      const showVideo = overlayVideoToggle ? overlayVideoToggle.checked : false;
+
+      // Draw Floor Baseline & Foot Base Reference when video is hidden (clean motion-capture style)
+      if (!showVideo && frame.landmarks && (frame.landmarks[27] || frame.landmarks[28])) {
+        const ankleY = Math.max(
+          frame.landmarks[27] ? frame.landmarks[27].y : 0.88,
+          frame.landmarks[28] ? frame.landmarks[28].y : 0.88
+        ) * h;
+        ctx.save();
+        ctx.strokeStyle = "rgba(100, 116, 139, 0.45)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, ankleY);
+        ctx.lineTo(w, ankleY);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(148, 163, 184, 0.7)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText("床面 (支持基底面基準)", 14, ankleY - 6);
+        ctx.restore();
+      }
 
       // Draw Skeleton Lines
       const connections = [

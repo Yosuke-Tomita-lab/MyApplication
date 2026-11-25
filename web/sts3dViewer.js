@@ -120,41 +120,6 @@ export class Sts3dViewer {
     ground.position.y = -0.005;
     ground.receiveShadow = true;
     this.scene.add(ground);
-
-    // Reference Chair Model (Seat + Backrest + Legs)
-    this.chairGroup = new THREE.Group();
-    const chairMat = new THREE.MeshStandardMaterial({
-      color: 0x475569,
-      roughness: 0.6,
-      transparent: true,
-      opacity: 0.45
-    });
-
-    // Seat (42cm height, 42x42cm) positioned behind ankles (Ankles at Z=0)
-    const seatGeo = new THREE.BoxGeometry(0.42, 0.04, 0.42);
-    const seat = new THREE.Mesh(seatGeo, chairMat);
-    seat.position.set(0, 0.42, -0.28);
-    this.chairGroup.add(seat);
-
-    // Backrest
-    const backGeo = new THREE.BoxGeometry(0.42, 0.45, 0.03);
-    const back = new THREE.Mesh(backGeo, chairMat);
-    back.position.set(0, 0.68, -0.48);
-    this.chairGroup.add(back);
-
-    // Legs
-    const legGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.42);
-    const legOffsets = [
-      [-0.18, -0.09], [0.18, -0.09],
-      [-0.18, -0.47], [0.18, -0.47]
-    ];
-    legOffsets.forEach(([lx, lz]) => {
-      const leg = new THREE.Mesh(legGeo, chairMat);
-      leg.position.set(lx, 0.21, lz);
-      this.chairGroup.add(leg);
-    });
-
-    this.scene.add(this.chairGroup);
   }
 
   buildBodyModel() {
@@ -302,18 +267,114 @@ export class Sts3dViewer {
 
   loadFrames(frames) {
     this.allFrames = frames || [];
+    this.globalAnkleRef = this.computeGlobalAnkleAnchor(this.allFrames);
+    this.smoothedFrames = this.generateSmoothedFrames(this.allFrames, this.globalAnkleRef);
     this.updateTrajectoryCurve();
-    if (this.allFrames.length > 0) {
-      this.updateFrame(this.allFrames[0]);
+    if (this.smoothedFrames.length > 0) {
+      this.updateFrame(this.smoothedFrames[0]);
     }
   }
 
+  // 1. Stable Global Ankle Anchor (Eliminates frame-by-frame jitter caused by fluctuating base references)
+  computeGlobalAnkleAnchor(frames) {
+    const xs = [], ys = [], zs = [];
+    for (const f of frames) {
+      const w = f.worldLandmarks;
+      if (w && w[27] && w[28]) {
+        xs.push((w[27].x + w[28].x) / 2);
+        ys.push(Math.max(w[27].y, w[28].y));
+        zs.push((w[27].z + w[28].z) / 2);
+      }
+    }
+    if (xs.length === 0) return { x: 0, y: 0.85, z: 0 };
+    // Use median for high outlier rejection
+    xs.sort((a, b) => a - b);
+    ys.sort((a, b) => a - b);
+    zs.sort((a, b) => a - b);
+    const mid = Math.floor(xs.length / 2);
+    return { x: xs[mid], y: ys[mid], z: zs[mid] };
+  }
+
+  // 2. Temporal Smoothing Filter (Applies Gaussian weighted moving average across frames)
+  generateSmoothedFrames(frames, ref) {
+    if (!frames || frames.length === 0) return [];
+    const N = frames.length;
+    const smoothed = [];
+    const windowWeights = [0.08, 0.20, 0.44, 0.20, 0.08]; // 5-tap Gaussian-like filter
+
+    for (let i = 0; i < N; i++) {
+      const f = frames[i];
+      const wlm = f.worldLandmarks;
+      if (!wlm || Object.keys(wlm).length < 10) {
+        smoothed.push(f);
+        continue;
+      }
+
+      const smoothedWlm = {};
+      const indices = Object.keys(wlm).map(k => parseInt(k));
+
+      indices.forEach(idx => {
+        let sumX = 0, sumY = 0, sumZ = 0, totalW = 0;
+        for (let w = -2; w <= 2; w++) {
+          const sampleIdx = Math.max(0, Math.min(N - 1, i + w));
+          const sampleWlm = frames[sampleIdx].worldLandmarks;
+          if (sampleWlm && sampleWlm[idx]) {
+            const weight = windowWeights[w + 2];
+            sumX += sampleWlm[idx].x * weight;
+            sumY += sampleWlm[idx].y * weight;
+            sumZ += sampleWlm[idx].z * weight;
+            totalW += weight;
+          }
+        }
+        if (totalW > 0) {
+          smoothedWlm[idx] = {
+            x: sumX / totalW,
+            y: sumY / totalW,
+            z: sumZ / totalW,
+            visibility: wlm[idx]?.visibility ?? 1.0
+          };
+        } else {
+          smoothedWlm[idx] = wlm[idx];
+        }
+      });
+
+      // Also smooth 2D landmarks if present
+      const smoothedLm = {};
+      if (f.landmarks) {
+        Object.keys(f.landmarks).forEach(idxStr => {
+          const idx = parseInt(idxStr);
+          let sumX = 0, sumY = 0, totalW = 0;
+          for (let w = -2; w <= 2; w++) {
+            const sampleIdx = Math.max(0, Math.min(N - 1, i + w));
+            const pt = frames[sampleIdx].landmarks ? frames[sampleIdx].landmarks[idx] : null;
+            if (pt) {
+              const weight = windowWeights[w + 2];
+              sumX += pt.x * weight;
+              sumY += pt.y * weight;
+              totalW += weight;
+            }
+          }
+          smoothedLm[idx] = totalW > 0 ? { x: sumX / totalW, y: sumY / totalW } : f.landmarks[idx];
+        });
+      }
+
+      smoothed.push({
+        ...f,
+        worldLandmarks: smoothedWlm,
+        landmarks: smoothedLm
+      });
+    }
+
+    return smoothed;
+  }
+
   updateTrajectoryCurve() {
-    if (!this.allFrames || this.allFrames.length === 0) return;
+    const framesToUse = this.smoothedFrames && this.smoothedFrames.length > 0 ? this.smoothedFrames : this.allFrames;
+    if (!framesToUse || framesToUse.length === 0) return;
 
     const points = [];
-    for (let i = 0; i < this.allFrames.length; i++) {
-      const f = this.allFrames[i];
+    for (let i = 0; i < framesToUse.length; i++) {
+      const f = framesToUse[i];
       const pos = this.getFrameCom3D(f);
       if (pos) points.push(pos);
     }
@@ -336,18 +397,17 @@ export class Sts3dViewer {
   }
 
   getAnkleReference(wlm) {
+    if (this.globalAnkleRef) return this.globalAnkleRef;
     if (!wlm) return { x: 0, y: 0.85, z: 0 };
     const ankL = wlm[27];
     const ankR = wlm[28];
     if (ankL && ankR) {
       return {
         x: (ankL.x + ankR.x) / 2,
-        y: Math.max(ankL.y, ankR.y), // MediaPipe: Y is downward, so bottom of feet has maximum Y
+        y: Math.max(ankL.y, ankR.y),
         z: (ankL.z + ankR.z) / 2
       };
     }
-    if (ankL) return { x: ankL.x, y: ankL.y, z: ankL.z };
-    if (ankR) return { x: ankR.x, y: ankR.y, z: ankR.z };
     return { x: 0, y: 0.85, z: 0 };
   }
 
@@ -355,7 +415,7 @@ export class Sts3dViewer {
     if (!pt) return null;
     return new THREE.Vector3(
       pt.x - ref.x,              // Lateral: Centered at midpoint of ankles (X=0)
-      (ref.y - pt.y) + 0.05,     // Vertical: Ankles grounded at floor Y=0.05m; body rises as hips/knees extend!
+      (ref.y - pt.y) + 0.05,     // Vertical: Ankles grounded at floor Y=0.05m; body rises smoothly!
       -(pt.z - ref.z)            // Anterior-Posterior: Ankles at Z=0; seated trunk is behind (Z<0), leans forward to Z~0
     );
   }
@@ -377,7 +437,7 @@ export class Sts3dViewer {
       const midHip = new THREE.Vector3().addVectors(pHipL, pHipR).multiplyScalar(0.5);
       const midAnk = new THREE.Vector3().addVectors(pAnkL, pAnkR).multiplyScalar(0.5);
 
-      // 3-segment biomechanical CoM model (Trunk/Head 35%, Pelvis/Thigh 35%, Shank/Foot 30%)
+      // 3-segment biomechanical CoM model
       const cx = 0.35 * midSh.x + 0.35 * midHip.x + 0.30 * midAnk.x;
       const cy = 0.35 * midSh.y + 0.35 * midHip.y + 0.30 * midAnk.y;
       const cz = 0.35 * midSh.z + 0.35 * midHip.z + 0.30 * midAnk.z;
@@ -385,11 +445,85 @@ export class Sts3dViewer {
       return new THREE.Vector3(cx, cy, cz);
     }
 
-    // Fallback from 2D coordinates
     const fx = (frame.comX - 0.5) * 1.2;
     const fy = Math.max(0.1, (1.0 - frame.comY) * 1.5);
     const fz = (frame.comZ || 0);
     return new THREE.Vector3(fx, fy, fz);
+  }
+
+  // Continuous Sub-frame Time Interpolator (Lerp for ultra-smooth 60fps playback)
+  updateAtTimestamp(timestampMs) {
+    const frames = this.smoothedFrames && this.smoothedFrames.length > 0 ? this.smoothedFrames : this.allFrames;
+    if (!frames || frames.length === 0) return;
+
+    if (frames.length === 1 || timestampMs <= frames[0].timestampMs) {
+      this.updateFrame(frames[0]);
+      return;
+    }
+    const last = frames[frames.length - 1];
+    if (timestampMs >= last.timestampMs) {
+      this.updateFrame(last);
+      return;
+    }
+
+    // Binary search or linear search for surrounding frames
+    let i = 0;
+    while (i < frames.length - 1 && frames[i + 1].timestampMs <= timestampMs) {
+      i++;
+    }
+    const f0 = frames[i];
+    const f1 = frames[i + 1];
+
+    const dt = f1.timestampMs - f0.timestampMs;
+    const alpha = dt > 0 ? Math.max(0, Math.min(1, (timestampMs - f0.timestampMs) / dt)) : 0;
+
+    // Interpolate worldLandmarks
+    const interpWlm = {};
+    if (f0.worldLandmarks && f1.worldLandmarks) {
+      for (const k in f0.worldLandmarks) {
+        const p0 = f0.worldLandmarks[k];
+        const p1 = f1.worldLandmarks[k];
+        if (p0 && p1) {
+          interpWlm[k] = {
+            x: p0.x + (p1.x - p0.x) * alpha,
+            y: p0.y + (p1.y - p0.y) * alpha,
+            z: p0.z + (p1.z - p0.z) * alpha,
+            visibility: p0.visibility
+          };
+        } else {
+          interpWlm[k] = p0 || p1;
+        }
+      }
+    }
+
+    // Interpolate 2D landmarks
+    const interpLm = {};
+    if (f0.landmarks && f1.landmarks) {
+      for (const k in f0.landmarks) {
+        const p0 = f0.landmarks[k];
+        const p1 = f1.landmarks[k];
+        if (p0 && p1) {
+          interpLm[k] = {
+            x: p0.x + (p1.x - p0.x) * alpha,
+            y: p0.y + (p1.y - p0.y) * alpha
+          };
+        } else {
+          interpLm[k] = p0 || p1;
+        }
+      }
+    }
+
+    const interpFrame = {
+      ...f0,
+      timestampMs,
+      worldLandmarks: interpWlm,
+      landmarks: interpLm,
+      comX: f0.comX + (f1.comX - f0.comX) * alpha,
+      comY: f0.comY + (f1.comY - f0.comY) * alpha,
+      midBaseX: f0.midBaseX + (f1.midBaseX - f0.midBaseX) * alpha
+    };
+
+    this.updateFrame(interpFrame);
   }
 
   updateFrame(frame) {
@@ -404,7 +538,7 @@ export class Sts3dViewer {
         return this.transformWorldPoint(wlm[idx], ref);
       }
       // Fallback
-      const lm2 = frame.landmarks[idx];
+      const lm2 = frame.landmarks ? frame.landmarks[idx] : null;
       if (lm2) {
         return new THREE.Vector3(
           (lm2.x - 0.5) * 1.2,
