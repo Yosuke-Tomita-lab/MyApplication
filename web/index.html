@@ -186,11 +186,13 @@
 
         <!-- Video & Skeleton Overlay Viewport -->
         <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] flex items-center justify-center">
-          <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
-          <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
+          <div id="videoTransformWrapper" class="w-full h-full relative flex items-center justify-center transition-transform duration-200">
+            <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
+            <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
+          </div>
 
           <!-- Placeholder -->
-          <div id="videoPlaceholder" class="text-center p-8 space-y-3">
+          <div id="videoPlaceholder" class="text-center p-8 space-y-3 z-10 pointer-events-none">
             <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>
@@ -490,6 +492,12 @@
     const triggerPrintBtn = document.getElementById("triggerPrintBtn");
     const a4PrintContainer = document.getElementById("a4PrintContainer");
 
+    // Camera & Mirror Elements
+    const videoTransformWrapper = document.getElementById("videoTransformWrapper");
+    const mirrorCheckbox = document.getElementById("mirrorCheckbox");
+    const heightInput = document.getElementById("heightInput");
+    const weightInput = document.getElementById("weightInput");
+
     // Mode Radio Cards
     const modeCards = document.querySelectorAll(".mode-card");
     const modeRadios = document.querySelectorAll('input[name="stsModeRadio"]');
@@ -578,6 +586,29 @@
       };
     });
 
+    // Mirror / In-Camera Transform Control
+    function applyMirrorTransform() {
+      const isMirrored = mirrorCheckbox.checked;
+      isFrontCameraMirrored = isMirrored;
+      if (videoTransformWrapper) {
+        videoTransformWrapper.style.transform = isMirrored ? "scaleX(-1)" : "scaleX(1)";
+      }
+    }
+
+    mirrorCheckbox.onchange = () => {
+      applyMirrorTransform();
+      if (rawExtractedFrames.length >= 5) {
+        runFullAnalysis();
+      }
+    };
+
+    heightInput.onchange = () => {
+      if (rawExtractedFrames.length >= 5) runFullAnalysis();
+    };
+    weightInput.onchange = () => {
+      if (rawExtractedFrames.length >= 5) runFullAnalysis();
+    };
+
     // 30s-STS Controls
     minusRepBtn.onclick = () => {
       thirtySecRepsInput.value = Math.max(1, parseInt(thirtySecRepsInput.value || 1) - 1);
@@ -614,6 +645,7 @@
 
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
+      applyMirrorTransform();
 
       await extractFramesAndAnalyze();
     };
@@ -627,6 +659,7 @@
           video.srcObject = stream;
           video.classList.remove("hidden");
           placeholder.classList.add("hidden");
+          applyMirrorTransform();
           await video.play();
           isCameraRunning = true;
           cameraBtn.innerText = "カメラ停止";
@@ -1206,6 +1239,7 @@
             <h2 class="font-bold text-slate-900 flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-blue-600"></span>
               動作シークエンス スティックピクチャ (代表試行: ${targetTrial ? targetTrial.repIndex + "回目" : "-"})
+              ${res.isFrontCameraMirrored ? '<span class="ml-2 text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded">自撮りカメラ左右反転表示中</span>' : ''}
             </h2>
             <span class="text-[10px] text-slate-500">●黄:身体重心(CoM) / ●緑:支持基底面 / 破線:床面</span>
           </div>
@@ -1295,7 +1329,7 @@
       }
     }
 
-    // Stick Picture Sequence Renderer
+    // Stick Picture Sequence Renderer (Supports Mirror Inversion)
     function renderStickPictureOnCanvas(trial, frames) {
       const c = document.getElementById("stickPictureCanvas");
       if (!c) return;
@@ -1315,6 +1349,7 @@
       ];
 
       const slotW = w / 3;
+      const isMirrored = isFrontCameraMirrored;
 
       // Draw Ground Level Baseline
       ctx2.strokeStyle = "rgba(148, 163, 184, 0.4)";
@@ -1344,21 +1379,22 @@
         ctx2.textAlign = "center";
         ctx2.fillText(phase.label, cx, 16);
 
-        // Compute local scaling based on footY and headY to fit in 110px height
         const lms = frame.landmarks;
         const scaleY = (h - 45);
         const baseY = h - 20;
 
-        // Skeleton Links
+        // Skeleton Links (Mirror handled)
         ctx2.strokeStyle = phase.stroke;
         ctx2.lineWidth = 3;
         for (const [p1, p2] of connections) {
           const pt1 = lms[p1];
           const pt2 = lms[p2];
           if (pt1 && pt2) {
-            const x1 = cx + (pt1.x - 0.5) * 160;
+            const rx1 = isMirrored ? (0.5 - pt1.x) : (pt1.x - 0.5);
+            const rx2 = isMirrored ? (0.5 - pt2.x) : (pt2.x - 0.5);
+            const x1 = cx + rx1 * 160;
             const y1 = 26 + pt1.y * scaleY;
-            const x2 = cx + (pt2.x - 0.5) * 160;
+            const x2 = cx + rx2 * 160;
             const y2 = 26 + pt2.y * scaleY;
             ctx2.beginPath();
             ctx2.moveTo(x1, y1);
@@ -1370,7 +1406,8 @@
         // Joints
         for (const i in lms) {
           const pt = lms[i];
-          const px = cx + (pt.x - 0.5) * 160;
+          const rx = isMirrored ? (0.5 - pt.x) : (pt.x - 0.5);
+          const px = cx + rx * 160;
           const py = 26 + pt.y * scaleY;
           ctx2.fillStyle = "#ffffff";
           ctx2.beginPath();
@@ -1379,7 +1416,8 @@
         }
 
         // CoM (🟡)
-        const comPx = cx + (frame.comX - 0.5) * 160;
+        const rawComX = isMirrored ? (0.5 - frame.comX) : (frame.comX - 0.5);
+        const comPx = cx + rawComX * 160;
         const comPy = 26 + frame.comY * scaleY;
         ctx2.fillStyle = "#eab308";
         ctx2.beginPath();
@@ -1390,7 +1428,8 @@
         ctx2.stroke();
 
         // BoS (🟢)
-        const bosPx = cx + (frame.midBaseX - 0.5) * 160;
+        const rawBosX = isMirrored ? (0.5 - frame.midBaseX) : (frame.midBaseX - 0.5);
+        const bosPx = cx + rawBosX * 160;
         ctx2.fillStyle = "#22c55e";
         ctx2.beginPath();
         ctx2.arc(bosPx, baseY, 3.5, 0, Math.PI * 2);
