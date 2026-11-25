@@ -32,70 +32,128 @@
         </div>
       </div>
 
-      <!-- Mode Selector Chips -->
-      <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl overflow-x-auto max-w-full">
-        <button id="modeSingleBtn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap">
-          通常立ち上がり
-        </button>
-        <button id="mode5Btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap">
-          5回 (5STS)
-        </button>
-        <button id="mode30sBtn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap">
-          30秒 (30s-STS)
-        </button>
-      </div>
-
-      <!-- Action Buttons -->
-      <div class="flex items-center gap-2">
+      <!-- Header Status & CSV Export -->
+      <div class="flex items-center gap-3">
+        <span id="activeModeBadgeHeader" class="badge bg-blue-100 text-blue-800">通常立ち上がり</span>
         <button id="exportCsvBtn" disabled class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          CSV保存
+          CSVレポート保存
         </button>
       </div>
     </div>
   </header>
 
   <!-- Main Container -->
-  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-      <!-- Left Column: Video & Pose Overlay (7 Cols) -->
-      <div class="lg:col-span-7 space-y-4">
+    <!-- STEP 1 & 2: Setup Card (Mode Selection & Anthropometrics) -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">1</span>
+          <h2 class="text-sm font-bold text-slate-900">測定モードの選択 ＆ 基本情報入力</h2>
+        </div>
+        <span class="text-xs text-slate-400">解析前に設定してください</span>
+      </div>
 
-        <!-- Input & Settings Card -->
-        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <label class="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                動画を選択
-                <input type="file" id="videoFileInput" accept="video/*" class="hidden">
-              </label>
-              <button id="cameraToggleBtn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                カメラ起動
-              </button>
+      <!-- Mode Selector 3-Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <!-- Single STS -->
+        <label class="mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">通常立ち上がり</div>
+              <div class="text-xs text-slate-500 mt-0.5">1回の詳細バイオメカニクス評価</div>
             </div>
-
-            <div class="flex items-center gap-4 text-xs text-slate-600">
-              <label class="flex items-center gap-1.5">
-                <span>身長:</span>
-                <input type="number" id="heightInput" value="170" class="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-center font-medium"> cm
-              </label>
-              <label class="flex items-center gap-1.5">
-                <span>体重:</span>
-                <input type="number" id="weightInput" value="65" class="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-center font-medium"> kg
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" id="mirrorCheckbox" class="rounded text-blue-600">
-                <span>左右反転</span>
-              </label>
-            </div>
+            <input type="radio" name="stsModeRadio" value="SINGLE" checked class="mt-0.5 accent-blue-600">
           </div>
+          <div class="mt-3 text-[11px] text-blue-700 bg-white/80 px-2 py-1 rounded border border-blue-100">
+            開始 → 離臀 → 終了 → 安定
+          </div>
+        </label>
+
+        <!-- 5STS -->
+        <label class="mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">5回立ち座り (5STS)</div>
+              <div class="text-xs text-slate-500 mt-0.5">筋力・瞬発力・全5回トータル時間</div>
+            </div>
+            <input type="radio" name="stsModeRadio" value="FIVE_TIMES" class="mt-0.5 accent-blue-600">
+          </div>
+          <div class="mt-3 text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+            5回連続 ＋ 離臀失敗の検出・記録
+          </div>
+        </label>
+
+        <!-- 30s-STS -->
+        <label class="mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">30秒立ち座り (30s-STS)</div>
+              <div class="text-xs text-slate-500 mt-0.5">下肢筋持久力・30秒間総立ち上がり</div>
+            </div>
+            <input type="radio" name="stsModeRadio" value="THIRTY_SECONDS" class="mt-0.5 accent-blue-600">
+          </div>
+          <div class="mt-3 text-[11px] text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+            開始・離臀・終了 / 30秒超過試行除外
+          </div>
+        </label>
+      </div>
+
+      <!-- Basic Anthropometrics & Camera Options -->
+      <div class="bg-slate-50 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs border border-slate-100">
+        <div class="flex flex-wrap items-center gap-6">
+          <label class="flex items-center gap-2">
+            <span class="font-semibold text-slate-700">被験者 身長:</span>
+            <input type="number" id="heightInput" value="170" class="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-800">
+            <span class="text-slate-500">cm</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <span class="font-semibold text-slate-700">被験者 体重:</span>
+            <input type="number" id="weightInput" value="65" class="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-800">
+            <span class="text-slate-500">kg</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="mirrorCheckbox" class="rounded text-blue-600 w-4 h-4">
+            <span class="font-medium text-slate-700">自撮りカメラ反転（前面インカメラ用）</span>
+          </label>
         </div>
 
-        <!-- Video Player & Canvas Container -->
-        <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[580px] flex items-center justify-center">
+        <div class="text-slate-400 text-[11px]">
+          ※ 体重と身長は推定床反力（GRF: %BW, N）の計算に利用されます
+        </div>
+      </div>
+
+      <!-- STEP 3: Video Input & Camera Trigger -->
+      <div class="pt-2 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
+          <span class="text-xs font-bold text-slate-900">動画の選択 または カメラ起動</span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <label class="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-200 transition flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            動画ファイルを選択して解析
+            <input type="file" id="videoFileInput" accept="video/*" class="hidden">
+          </label>
+          <button id="cameraToggleBtn" class="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Webカメラ起動
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN INTERACTIVE ANALYSIS WORKSPACE -->
+    <div id="analysisWorkspace" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Video & Overlay & Immediate Scroller Event Picker (7 Cols) -->
+      <div class="lg:col-span-7 space-y-4">
+
+        <!-- Video & Skeleton Overlay Viewport -->
+        <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] flex items-center justify-center">
           <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
           <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
 
@@ -104,44 +162,139 @@
             <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
               <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
             </div>
-            <p class="text-slate-300 font-medium text-sm">動画ファイルを選択するか、カメラを起動してください</p>
+            <p class="text-slate-300 font-medium text-sm">ステップ2で動画ファイルを選択してください</p>
             <p class="text-slate-500 text-xs">MediaPipe Pose が立ち座り動作を自動トラッキングします</p>
           </div>
 
-          <!-- Analysis Loading Overlay -->
+          <!-- Loading Overlay -->
           <div id="analysisLoading" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 hidden z-20">
             <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
             <p id="analysisProgressText" class="text-white text-sm font-semibold">動画を解析中... 0%</p>
           </div>
         </div>
 
-        <!-- Video Controls Card -->
+        <!-- TIMING IDENTIFICATION CONTROLLER (動画スクロール直下の同定操作パネル) -->
         <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
-          <div class="flex items-center gap-3">
-            <button id="playPauseBtn" disabled class="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
-              <svg id="playIcon" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <svg id="pauseIcon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-            </button>
-            <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
-            <span id="timeDisplay" class="text-xs font-mono text-slate-500 whitespace-nowrap">0.00s / 0.00s</span>
+
+          <!-- 1. Trial Selection Tabs & Active Trial Info -->
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-900">対象の回:</span>
+              <div id="trialTabsList" class="flex items-center gap-1.5 overflow-x-auto max-w-[280px] sm:max-w-[380px] py-0.5">
+                <!-- Dynamically generated trial tabs -->
+                <span class="text-xs text-slate-400">動画解析後に選択可能</span>
+              </div>
+            </div>
+            <span id="activeTrialLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">未選択</span>
           </div>
 
-          <!-- Phase and Metrics Badge Banner -->
-          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+          <!-- 2. Video Scroller (SeekBar) + Frame Step Buttons -->
+          <div class="space-y-1.5">
             <div class="flex items-center gap-2">
-              <span class="text-slate-500">フェーズ:</span>
-              <span id="currentPhaseBadge" class="badge bg-blue-100 text-blue-700 font-medium">待機</span>
-            </div>
-            <div class="flex items-center gap-4">
-              <div>重心偏倚: <span id="currentBiasText" class="font-bold text-slate-800">50.0% (正中)</span></div>
-              <div>鉛直GRF: <span id="currentGrfText" class="font-bold text-slate-800">100.0%BW</span></div>
+              <button id="playPauseBtn" disabled class="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
+                <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="pauseIcon" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              </button>
+              <button id="stepPrevBtn" disabled title="前へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">◀ -1F</button>
+              <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
+              <button id="stepNextBtn" disabled title="次へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">+1F ▶</button>
+              <span id="timeDisplay" class="text-xs font-mono text-slate-600 whitespace-nowrap min-w-[90px] text-right">0.00s / 0.00s</span>
             </div>
           </div>
+
+          <!-- 3. Immediate Event Identification Buttons (現在のスクロール位置を各タイミングに設定) -->
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
+            <div class="flex items-center justify-between text-[11px] text-slate-500">
+              <span class="font-semibold text-slate-700">動画スクロール位置をタイミングにセット:</span>
+              <span>クリックで現在時刻を反映 / ジャンプでそのコマへ移動</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <!-- Set Start -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-blue-700 font-bold">
+                  <span>● 開始</span>
+                  <button id="jumpStartBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-blue-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispStartTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setStartBtn" class="w-full py-1 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Seat-Off -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-orange-600 font-bold">
+                  <span>● 離臀</span>
+                  <button id="jumpSeatBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-orange-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispSeatTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setSeatBtn" class="w-full py-1 bg-orange-50 hover:bg-orange-500 text-orange-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Stand-End -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-emerald-600 font-bold">
+                  <span>● 終了</span>
+                  <button id="jumpEndBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-emerald-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispEndTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setEndBtn" class="w-full py-1 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Stable (Hidden in 30s-STS) -->
+              <div id="stableActionBox" class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-purple-600 font-bold">
+                  <span>● 立位安定</span>
+                  <button id="jumpStableBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-purple-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispStableTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setStableBtn" class="w-full py-1 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Failed Attempts Management Card (失敗試行・離臀失敗の記録・追加・削除) -->
+          <div class="bg-rose-50/70 border border-rose-200 p-3 rounded-xl space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                <span>失敗試行（離臀失敗）の記録</span>
+              </div>
+              <button id="addFailAtCurrentBtn" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shadow-xs">
+                <span>＋ 現在位置を離臀失敗として記録</span>
+              </button>
+            </div>
+
+            <!-- List of recorded failed attempts -->
+            <div id="failedAttemptsContainer" class="flex flex-wrap gap-1.5 pt-1">
+              <span class="text-slate-400 text-xs">記録された失敗試行はありません</span>
+            </div>
+          </div>
+
+          <!-- Status Banner -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500">現フレーム状態:</span>
+              <span id="currentPhaseBadge" class="badge bg-blue-100 text-blue-700 font-medium">待機</span>
+            </div>
+            <div class="flex items-center gap-4 text-slate-700">
+              <div>重心偏倚: <span id="currentBiasText" class="font-bold">50.0%</span></div>
+              <div>鉛直GRF: <span id="currentGrfText" class="font-bold">100%BW</span></div>
+            </div>
+          </div>
+
         </div>
 
       </div>
 
-      <!-- Right Column: Reports, Adjustments & Graphs (5 Cols) -->
+      <!-- Right Column: Reports, 30s-STS Controls & Graphs (5 Cols) -->
       <div class="lg:col-span-5 space-y-4">
 
         <!-- 30s-STS Reps Adjustment Card (Visible only in 30s-STS mode) -->
@@ -151,7 +304,7 @@
               <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
               <h3 class="text-xs font-bold text-amber-900">30秒立ち座り 立ち上がり総数</h3>
             </div>
-            <span class="text-xs text-amber-700">動画確認後に確定</span>
+            <span class="text-xs text-amber-700 font-medium">動画確認後に確定</span>
           </div>
           <div class="flex items-center gap-2">
             <button id="minusRepBtn" class="w-9 h-9 rounded-xl bg-white border border-amber-300 font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm">－</button>
@@ -183,69 +336,19 @@
             </div>
           </div>
 
+          <!-- Total / Success / Failed Stats -->
           <div id="attemptStatsRow" class="grid grid-cols-3 gap-2 text-center text-xs pt-1 border-t border-slate-100">
             <div class="p-2 bg-slate-50 rounded-lg">
               <div class="text-[10px] text-slate-400">総試行数</div>
               <div id="statTotalAttempts" class="font-bold text-slate-700">--</div>
             </div>
             <div class="p-2 bg-emerald-50 rounded-lg text-emerald-700">
-              <div class="text-[10px] text-emerald-500">成功数 / 率</div>
+              <div class="text-[10px] text-emerald-500">成功数 / 確率</div>
               <div id="statSuccessCount" class="font-bold">--</div>
             </div>
             <div class="p-2 bg-rose-50 rounded-lg text-rose-700">
-              <div class="text-[10px] text-rose-500">離臀失敗数 / 率</div>
+              <div class="text-[10px] text-rose-500">離臀失敗 / 確率</div>
               <div id="statFailCount" class="font-bold">--</div>
-            </div>
-          </div>
-
-          <div id="failedTimesBox" class="p-2.5 bg-rose-50/60 border border-rose-100 rounded-xl text-xs text-rose-800 hidden">
-            <span class="font-semibold">離臀失敗イベント:</span>
-            <span id="failedTimesList" class="ml-1 font-mono">なし</span>
-          </div>
-        </div>
-
-        <!-- Trial Tabs & Event Adjustment Sliders -->
-        <div id="trialEditCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <h3 class="text-xs font-bold text-slate-800">試行別タイミング微調整</h3>
-            <!-- Trial Tabs -->
-            <div id="trialTabsContainer" class="flex gap-1 overflow-x-auto max-w-[220px]">
-              <!-- Dynamically rendered tabs -->
-            </div>
-          </div>
-
-          <div id="trialEventSliders" class="space-y-3 text-xs">
-            <!-- Event Sliders (Start, SeatOff, StandEnd, Stable) -->
-            <div class="space-y-1">
-              <div class="flex justify-between font-medium">
-                <span class="text-blue-700 flex items-center gap-1">● 開始:</span>
-                <span id="sliderStartVal" class="font-mono">-- s</span>
-              </div>
-              <input type="range" id="sliderStart" class="w-full accent-blue-600">
-            </div>
-
-            <div class="space-y-1">
-              <div class="flex justify-between font-medium">
-                <span class="text-orange-600 flex items-center gap-1">● 離臀:</span>
-                <span id="sliderSeatVal" class="font-mono">-- s</span>
-              </div>
-              <input type="range" id="sliderSeat" class="w-full accent-orange-500">
-            </div>
-
-            <div class="space-y-1">
-              <div class="flex justify-between font-medium">
-                <span class="text-emerald-600 flex items-center gap-1">● 立ち上がり終了:</span>
-                <span id="sliderEndVal" class="font-mono">-- s</span>
-              </div>
-              <input type="range" id="sliderEnd" class="w-full accent-emerald-500">
-            </div>
-
-            <div id="sliderStableBox" class="space-y-1">
-              <div class="flex justify-between font-medium">
-                <span class="text-purple-600 flex items-center gap-1">● 立位安定:</span>
-                <span id="sliderStableVal" class="font-mono">-- s</span>
-              </div>
-              <input type="range" id="sliderStable" class="w-full accent-purple-500">
             </div>
           </div>
         </div>
@@ -259,7 +362,7 @@
             </h3>
             <span class="text-[10px] text-slate-400">所要時間推移</span>
           </div>
-          <div class="h-48 relative">
+          <div class="h-44 relative">
             <canvas id="cumTimeChart"></canvas>
           </div>
         </div>
@@ -271,9 +374,9 @@
               <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
               重心左右偏倚推移 (50%正中基準)
             </h3>
-            <span class="text-[10px] text-slate-400">青:左 / 橙:右</span>
+            <span class="text-[10px] text-slate-400">青:左 / 橙:右 / ◆:離臀時</span>
           </div>
-          <div class="h-48 relative">
+          <div class="h-44 relative">
             <canvas id="biasChart"></canvas>
           </div>
         </div>
@@ -285,7 +388,7 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D } from "./stsModels.js";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, FailedAttempt } from "./stsModels.js";
     import { StsMetricCalculator } from "./stsMetrics.js";
     import { StsCsvExporter } from "./stsExporter.js";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
@@ -312,25 +415,45 @@
     const playIcon = document.getElementById("playIcon");
     const pauseIcon = document.getElementById("pauseIcon");
     const seekBar = document.getElementById("seekBar");
+    const stepPrevBtn = document.getElementById("stepPrevBtn");
+    const stepNextBtn = document.getElementById("stepNextBtn");
     const timeDisplay = document.getElementById("timeDisplay");
     const exportCsvBtn = document.getElementById("exportCsvBtn");
 
-    // Mode Buttons
-    const modeSingleBtn = document.getElementById("modeSingleBtn");
-    const mode5Btn = document.getElementById("mode5Btn");
-    const mode30sBtn = document.getElementById("mode30sBtn");
+    // Mode Radio Cards
+    const modeCards = document.querySelectorAll(".mode-card");
+    const modeRadios = document.querySelectorAll('input[name="stsModeRadio"]');
+    const headerModeBadge = document.getElementById("activeModeBadgeHeader");
     const thirtySecAdjustCard = document.getElementById("thirtySecAdjustCard");
+    const stableActionBox = document.getElementById("stableActionBox");
+
+    // Timing Buttons & Displays
+    const trialTabsList = document.getElementById("trialTabsList");
+    const activeTrialLabel = document.getElementById("activeTrialLabel");
+    const dispStartTime = document.getElementById("dispStartTime");
+    const dispSeatTime = document.getElementById("dispSeatTime");
+    const dispEndTime = document.getElementById("dispEndTime");
+    const dispStableTime = document.getElementById("dispStableTime");
+
+    const setStartBtn = document.getElementById("setStartBtn");
+    const setSeatBtn = document.getElementById("setSeatBtn");
+    const setEndBtn = document.getElementById("setEndBtn");
+    const setStableBtn = document.getElementById("setStableBtn");
+
+    const jumpStartBtn = document.getElementById("jumpStartBtn");
+    const jumpSeatBtn = document.getElementById("jumpSeatBtn");
+    const jumpEndBtn = document.getElementById("jumpEndBtn");
+    const jumpStableBtn = document.getElementById("jumpStableBtn");
+
+    // Failed Attempts
+    const addFailAtCurrentBtn = document.getElementById("addFailAtCurrentBtn");
+    const failedAttemptsContainer = document.getElementById("failedAttemptsContainer");
+
+    // 30s-STS Controls
     const thirtySecRepsInput = document.getElementById("thirtySecRepsInput");
     const minusRepBtn = document.getElementById("minusRepBtn");
     const plusRepBtn = document.getElementById("plusRepBtn");
     const applyRepsBtn = document.getElementById("applyRepsBtn");
-
-    // Sliders
-    const sliderStart = document.getElementById("sliderStart");
-    const sliderSeat = document.getElementById("sliderSeat");
-    const sliderEnd = document.getElementById("sliderEnd");
-    const sliderStable = document.getElementById("sliderStable");
-    const sliderStableBox = document.getElementById("sliderStableBox");
 
     // Charts
     let cumTimeChart = null;
@@ -357,30 +480,35 @@
     }
     initMediaPipe();
 
-    // Mode Switching
-    function setMode(mode) {
-      currentMode = mode;
-      [modeSingleBtn, mode5Btn, mode30sBtn].forEach(b => {
-        b.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap";
-      });
-      if (mode === StsMode.SINGLE) modeSingleBtn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
-      if (mode === StsMode.FIVE_TIMES) mode5Btn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
-      if (mode === StsMode.THIRTY_SECONDS) mode30sBtn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
+    // Mode Selection Handling
+    modeRadios.forEach(radio => {
+      radio.onchange = () => {
+        const val = radio.value;
+        if (val === "SINGLE") currentMode = StsMode.SINGLE;
+        if (val === "FIVE_TIMES") currentMode = StsMode.FIVE_TIMES;
+        if (val === "THIRTY_SECONDS") currentMode = StsMode.THIRTY_SECONDS;
 
-      document.getElementById("reportModeBadge").innerText = mode.title;
-      thirtySecAdjustCard.classList.toggle("hidden", mode !== StsMode.THIRTY_SECONDS);
-      sliderStableBox.classList.toggle("hidden", mode === StsMode.THIRTY_SECONDS);
+        modeCards.forEach(card => {
+          const r = card.querySelector('input[type="radio"]');
+          if (r.checked) {
+            card.className = "mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500";
+          } else {
+            card.className = "mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300";
+          }
+        });
 
-      if (rawExtractedFrames.length > 5) {
-        runFullAnalysis();
-      }
-    }
+        headerModeBadge.innerText = currentMode.title;
+        document.getElementById("reportModeBadge").innerText = currentMode.title;
+        thirtySecAdjustCard.classList.toggle("hidden", currentMode !== StsMode.THIRTY_SECONDS);
+        stableActionBox.classList.toggle("hidden", currentMode === StsMode.THIRTY_SECONDS);
 
-    modeSingleBtn.onclick = () => setMode(StsMode.SINGLE);
-    mode5Btn.onclick = () => setMode(StsMode.FIVE_TIMES);
-    mode30sBtn.onclick = () => setMode(StsMode.THIRTY_SECONDS);
+        if (rawExtractedFrames.length > 5) {
+          runFullAnalysis();
+        }
+      };
+    });
 
-    // 30s-STS Reps Adjustment Controls
+    // 30s-STS Controls
     minusRepBtn.onclick = () => {
       thirtySecRepsInput.value = Math.max(1, parseInt(thirtySecRepsInput.value || 1) - 1);
     };
@@ -397,7 +525,7 @@
       }
     };
 
-    // Video File Selection & Extraction
+    // Video File Selection
     fileInput.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -407,6 +535,8 @@
       video.classList.remove("hidden");
       placeholder.classList.add("hidden");
       playPauseBtn.disabled = false;
+      stepPrevBtn.disabled = false;
+      stepNextBtn.disabled = false;
       seekBar.disabled = false;
 
       await video.play().catch(() => {});
@@ -438,7 +568,7 @@
         if (stream) stream.getTracks().forEach(t => t.stop());
         video.srcObject = null;
         isCameraRunning = false;
-        cameraBtn.innerText = "カメラ起動";
+        cameraBtn.innerText = "Webカメラ起動";
       }
     };
 
@@ -483,7 +613,7 @@
           landmarks: lmMap
         }));
 
-        if (i % 10 === 0) {
+        if (i % 8 === 0) {
           const pct = Math.round((i / totalSteps) * 100);
           progressText.innerText = `動画を解析中... ${pct}%`;
         }
@@ -518,8 +648,190 @@
       renderReport();
       renderCharts();
       renderTrialTabs();
+      renderFailedAttemptsList();
       drawCurrentOverlay();
     }
+
+    // Trial Tabs & Timing Displays
+    function renderTrialTabs() {
+      trialTabsList.innerHTML = "";
+      if (!analysisResult || analysisResult.trials.length === 0) {
+        trialTabsList.innerHTML = '<span class="text-xs text-slate-400">解析試行なし</span>';
+        activeTrialLabel.innerText = "なし";
+        clearTimingDisplays();
+        return;
+      }
+
+      if (selectedTrialIdx >= analysisResult.trials.length) {
+        selectedTrialIdx = 0;
+      }
+
+      analysisResult.trials.forEach((t, idx) => {
+        const btn = document.createElement("button");
+        btn.innerText = `${t.repIndex}回目`;
+        btn.className = idx === selectedTrialIdx
+          ? "px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 text-white whitespace-nowrap shadow-xs"
+          : "px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap";
+        btn.onclick = () => {
+          selectedTrialIdx = idx;
+          renderTrialTabs();
+          loadActiveTrialTimings();
+        };
+        trialTabsList.appendChild(btn);
+      });
+
+      activeTrialLabel.innerText = `${analysisResult.trials[selectedTrialIdx].repIndex}回目を編集中`;
+      loadActiveTrialTimings();
+    }
+
+    function loadActiveTrialTimings() {
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+      const trial = analysisResult.trials[selectedTrialIdx];
+      dispStartTime.innerText = (trial.startTimeMs / 1000.0).toFixed(2) + "s";
+      dispSeatTime.innerText = (trial.seatOffTimeMs / 1000.0).toFixed(2) + "s";
+      dispEndTime.innerText = (trial.standEndTimeMs / 1000.0).toFixed(2) + "s";
+      dispStableTime.innerText = (trial.stableTimeMs / 1000.0).toFixed(2) + "s";
+    }
+
+    function clearTimingDisplays() {
+      dispStartTime.innerText = "-- s";
+      dispSeatTime.innerText = "-- s";
+      dispEndTime.innerText = "-- s";
+      dispStableTime.innerText = "-- s";
+    }
+
+    // Jumping to Specific Timings in Video
+    jumpStartBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].startTimeMs);
+      }
+    };
+    jumpSeatBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].seatOffTimeMs);
+      }
+    };
+    jumpEndBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].standEndTimeMs);
+      }
+    };
+    jumpStableBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].stableTimeMs);
+      }
+    };
+
+    function seekToMs(ms) {
+      const dur = video.duration || 1;
+      video.currentTime = Math.max(0, Math.min(dur, ms / 1000.0));
+      drawCurrentOverlay();
+    }
+
+    // Setting Current Frame Time to Events
+    function updateActiveTrialEvent(which) {
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const trial = analysisResult.trials[selectedTrialIdx];
+      const is30s = analysisResult.mode.id === "THIRTY_SECONDS";
+
+      let newStart = trial.startTimeMs;
+      let newSeat = trial.seatOffTimeMs;
+      let newEnd = trial.standEndTimeMs;
+      let newStable = trial.stableTimeMs;
+
+      if (which === "start") newStart = currentMs;
+      if (which === "seat") newSeat = currentMs;
+      if (which === "end") {
+        newEnd = currentMs;
+        if (is30s) newStable = currentMs;
+      }
+      if (which === "stable") newStable = currentMs;
+
+      const updated = StsMetricCalculator.recalculateTrialFromTimestamps({
+        repIndex: trial.repIndex,
+        frames: analysisResult.frames,
+        startTimeMs: newStart,
+        seatOffTimeMs: newSeat,
+        standEndTimeMs: newEnd,
+        stableTimeMs: newStable
+      });
+
+      analysisResult.trials[selectedTrialIdx] = updated;
+
+      // 30s-STS の場合は30秒ウィンドウ制限を再評価
+      if (is30s && analysisResult.trials.length > 0) {
+        const t0 = analysisResult.trials[0].startTimeMs;
+        analysisResult.trials = analysisResult.trials.filter(t => t.standEndTimeMs <= t0 + 30000);
+      }
+
+      loadActiveTrialTimings();
+      renderReport();
+      renderCharts();
+      drawCurrentOverlay();
+    }
+
+    setStartBtn.onclick = () => updateActiveTrialEvent("start");
+    setSeatBtn.onclick = () => updateActiveTrialEvent("seat");
+    setEndBtn.onclick = () => updateActiveTrialEvent("end");
+    setStableBtn.onclick = () => updateActiveTrialEvent("stable");
+
+    // Failed Attempts Management
+    addFailAtCurrentBtn.onclick = () => {
+      if (!analysisResult) return;
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const fail = new FailedAttempt(currentMs, "離臀失敗");
+      analysisResult.failedAttempts.push(fail);
+      analysisResult.failedAttempts.sort((a, b) => a.timestampMs - b.timestampMs);
+      renderFailedAttemptsList();
+      renderReport();
+      drawCurrentOverlay();
+    };
+
+    function renderFailedAttemptsList() {
+      failedAttemptsContainer.innerHTML = "";
+      if (!analysisResult || analysisResult.failedAttempts.length === 0) {
+        failedAttemptsContainer.innerHTML = '<span class="text-slate-400 text-xs">記録された離臀失敗はありません</span>';
+        return;
+      }
+
+      analysisResult.failedAttempts.forEach((fail, idx) => {
+        const tag = document.createElement("div");
+        tag.className = "inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-rose-300 rounded-lg text-xs text-rose-800 shadow-2xs";
+
+        const textSpan = document.createElement("span");
+        textSpan.className = "cursor-pointer font-mono font-bold hover:underline";
+        textSpan.innerText = `離臀失敗 ${(fail.timestampMs / 1000.0).toFixed(2)}s`;
+        textSpan.title = "この瞬間へジャンプ";
+        textSpan.onclick = () => seekToMs(fail.timestampMs);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.innerHTML = "&times;";
+        deleteBtn.className = "w-4 h-4 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-700 flex items-center justify-center font-bold text-xs";
+        deleteBtn.title = "削除";
+        deleteBtn.onclick = () => {
+          analysisResult.failedAttempts.splice(idx, 1);
+          renderFailedAttemptsList();
+          renderReport();
+          drawCurrentOverlay();
+        };
+
+        tag.appendChild(textSpan);
+        tag.appendChild(deleteBtn);
+        failedAttemptsContainer.appendChild(tag);
+      });
+    }
+
+    // Step Prev / Next Buttons (0.04s)
+    stepPrevBtn.onclick = () => {
+      video.currentTime = Math.max(0, video.currentTime - 0.04);
+      drawCurrentOverlay();
+    };
+    stepNextBtn.onclick = () => {
+      const dur = video.duration || 1;
+      video.currentTime = Math.min(dur, video.currentTime + 0.04);
+      drawCurrentOverlay();
+    };
 
     // Render Summary Report
     function renderReport() {
@@ -541,102 +853,6 @@
       document.getElementById("statSuccessCount").innerText = `${res.trials.length} (${sRate}%)`;
       const fRate = totalAttempts > 0 ? (res.failedAttempts.length / totalAttempts * 100).toFixed(0) : 0;
       document.getElementById("statFailCount").innerText = `${res.failedAttempts.length} (${fRate}%)`;
-
-      const failedBox = document.getElementById("failedTimesBox");
-      if (res.failedAttempts.length > 0) {
-        failedBox.classList.remove("hidden");
-        document.getElementById("failedTimesList").innerText = res.failedAttempts
-          .map(f => (f.timestampMs / 1000.0).toFixed(2) + "s")
-          .join(", ");
-      } else {
-        failedBox.classList.add("hidden");
-      }
-    }
-
-    // Render Trial Tabs and Sliders
-    function renderTrialTabs() {
-      const container = document.getElementById("trialTabsContainer");
-      container.innerHTML = "";
-      if (!analysisResult || analysisResult.trials.length === 0) return;
-
-      analysisResult.trials.forEach((t, idx) => {
-        const btn = document.createElement("button");
-        btn.innerText = `${t.repIndex}回目`;
-        btn.className = idx === selectedTrialIdx
-          ? "px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white whitespace-nowrap shadow-sm"
-          : "px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap";
-        btn.onclick = () => {
-          selectedTrialIdx = idx;
-          renderTrialTabs();
-          loadTrialSliders();
-        };
-        container.appendChild(btn);
-      });
-
-      loadTrialSliders();
-    }
-
-    function loadTrialSliders() {
-      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
-      const trial = analysisResult.trials[selectedTrialIdx];
-      const maxMs = rawExtractedFrames[rawExtractedFrames.length - 1].timestampMs;
-
-      [sliderStart, sliderSeat, sliderEnd, sliderStable].forEach(s => {
-        s.min = 0;
-        s.max = maxMs;
-        s.step = 20;
-      });
-
-      sliderStart.value = trial.startTimeMs;
-      sliderSeat.value = trial.seatOffTimeMs;
-      sliderEnd.value = trial.standEndTimeMs;
-      sliderStable.value = trial.stableTimeMs;
-
-      updateSliderLabels();
-
-      sliderStart.oninput = onSliderChange;
-      sliderSeat.oninput = onSliderChange;
-      sliderEnd.oninput = onSliderChange;
-      sliderStable.oninput = onSliderChange;
-    }
-
-    function updateSliderLabels() {
-      document.getElementById("sliderStartVal").innerText = (sliderStart.value / 1000.0).toFixed(2) + "s";
-      document.getElementById("sliderSeatVal").innerText = (sliderSeat.value / 1000.0).toFixed(2) + "s";
-      document.getElementById("sliderEndVal").innerText = (sliderEnd.value / 1000.0).toFixed(2) + "s";
-      document.getElementById("sliderStableVal").innerText = (sliderStable.value / 1000.0).toFixed(2) + "s";
-    }
-
-    function onSliderChange() {
-      updateSliderLabels();
-      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
-
-      const is30s = analysisResult.mode.id === "THIRTY_SECONDS";
-      const startMs = parseInt(sliderStart.value);
-      const seatMs = parseInt(sliderSeat.value);
-      const endMs = parseInt(sliderEnd.value);
-      const stableMs = is30s ? endMs : parseInt(sliderStable.value);
-
-      const updated = StsMetricCalculator.recalculateTrialFromTimestamps({
-        repIndex: analysisResult.trials[selectedTrialIdx].repIndex,
-        frames: analysisResult.frames,
-        startTimeMs: startMs,
-        seatOffTimeMs: seatMs,
-        standEndTimeMs: endMs,
-        stableTimeMs: stableMs
-      });
-
-      analysisResult.trials[selectedTrialIdx] = updated;
-
-      // 30s-STS の場合は30秒ウィンドウ制限を再評価
-      if (is30s && analysisResult.trials.length > 0) {
-        const t0 = analysisResult.trials[0].startTimeMs;
-        analysisResult.trials = analysisResult.trials.filter(t => t.standEndTimeMs <= t0 + 30000);
-      }
-
-      renderReport();
-      renderCharts();
-      drawCurrentOverlay();
     }
 
     // Render Charts (Chart.js)
