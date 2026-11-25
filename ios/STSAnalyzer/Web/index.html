@@ -1,0 +1,2977 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="cache-control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="pragma" content="no-cache">
+  <meta http-equiv="expires" content="0">
+  <title>立ち座り生体力学解析システム (STS Web Analyzer)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Three.js & OrbitControls for 3D Mesh Kinematics -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .badge { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; }
+
+    /* Print Styles for A4 Single Page Report */
+    @media print {
+      html, body {
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+        color: #0f172a !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        overflow: hidden !important;
+      }
+      header, main, .no-print {
+        display: none !important;
+      }
+      #reportPreviewModal {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
+        z-index: auto !important;
+      }
+      #reportPreviewModal > div {
+        box-shadow: none !important;
+        border: none !important;
+        max-width: 100% !important;
+        max-height: none !important;
+        width: 100% !important;
+        height: auto !important;
+        border-radius: 0 !important;
+        overflow: visible !important;
+        background: transparent !important;
+      }
+      #reportPreviewModal > div > div:first-child {
+        display: none !important; /* Hide modal header during print */
+      }
+      #reportPreviewModal > div > div:last-child {
+        padding: 0 !important;
+        background: transparent !important;
+        overflow: visible !important;
+      }
+      #a4PrintContainer {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        background: white !important;
+        page-break-after: avoid !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      #a4PrintContainer.is-portrait {
+        max-height: 275mm !important;
+      }
+      #a4PrintContainer:not(.is-portrait) {
+        max-height: 194mm !important;
+      }
+    }
+  </style>
+  <!-- Dynamic Print Page Orientation Style (Defaults to Landscape 横長 with balanced margins) -->
+  <style id="dynamicPageOrientationStyle">
+    @media print {
+      @page {
+        size: A4 landscape;
+        margin: 8mm 12mm 8mm 12mm;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- Global Error Banner & Diagnostic Notice -->
+  <div id="globalErrorBanner" class="hidden bg-rose-600 text-white px-4 py-2.5 text-xs font-semibold z-50 sticky top-0 shadow-md flex items-center justify-between no-print">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+      <span id="globalErrorMessage">エラーを検出しました</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="location.reload(true)" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded text-xs transition">キャッシュ強制クリア再読み込み (Ctrl+Shift+R)</button>
+      <button onclick="document.getElementById('globalErrorBanner').classList.add('hidden')" class="text-white hover:text-white/80 text-base leading-none font-bold px-1">&times;</button>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('error', function(e) {
+      var b = document.getElementById('globalErrorBanner');
+      var m = document.getElementById('globalErrorMessage');
+      var src = e.filename ? e.filename.split('/').pop() : '';
+      var loc = src ? ('[' + src + (e.lineno ? ':' + e.lineno : '') + '] ') : '';
+      var msg = 'スクリプトエラー: ' + loc + (e.message || e);
+      if (b && m) {
+        m.innerText = msg;
+        b.classList.remove('hidden');
+      }
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var b = document.getElementById('globalErrorBanner');
+      var m = document.getElementById('globalErrorMessage');
+      var msg = '非同期処理エラー: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+      if (b && m) {
+        m.innerText = msg;
+        b.classList.remove('hidden');
+      }
+    });
+  </script>
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-blue-200">
+          STS
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">立ち座り生体力学解析システム</h1>
+          <p class="text-xs text-slate-500">Sit-to-Stand Biomechanical Analyzer (Web PWA)</p>
+        </div>
+      </div>
+
+      <!-- Header Status & Action Buttons -->
+      <div class="flex items-center gap-3">
+        <span id="activeModeBadgeHeader" class="badge bg-blue-100 text-blue-800">通常立ち上がり</span>
+        <button id="openReportBtn" disabled class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          📄 A4レポート作成・出力
+        </button>
+        <button id="exportCsvBtn" disabled class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          CSV保存
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- STEP 1 & 2: Setup Card (Mode Selection & Anthropometrics) -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">1</span>
+          <h2 class="text-sm font-bold text-slate-900">測定モードの選択 ＆ 基本情報入力</h2>
+        </div>
+        <span class="text-xs text-slate-400">解析前に設定してください</span>
+      </div>
+
+      <!-- Mode Selector 3-Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <!-- Single STS -->
+        <label class="mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">通常立ち上がり</div>
+              <div class="text-xs text-slate-500 mt-0.5">1回の詳細バイオメカニクス評価</div>
+            </div>
+            <input type="radio" name="stsModeRadio" value="SINGLE" checked class="mt-0.5 accent-blue-600">
+          </div>
+          <div class="mt-3 text-[11px] text-blue-700 bg-white/80 px-2 py-1 rounded border border-blue-100">
+            開始 → 離臀 → 終了 → 安定
+          </div>
+        </label>
+
+        <!-- 5STS -->
+        <label class="mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">5回立ち座り (5STS)</div>
+              <div class="text-xs text-slate-500 mt-0.5">筋力・瞬発力・全5回トータル時間</div>
+            </div>
+            <input type="radio" name="stsModeRadio" value="FIVE_TIMES" class="mt-0.5 accent-blue-600">
+          </div>
+          <div class="mt-3 text-[11px] text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+            5回連続 ＋ 離臀失敗の検出・記録
+          </div>
+        </label>
+
+        <!-- 30s-STS -->
+        <label class="mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="font-bold text-sm text-slate-900">30秒立ち座り (30s-STS)</div>
+              <div class="text-xs text-slate-500 mt-0.5">下肢筋持久力・30秒間総立ち上がり</div>
+            </div>
+            <input type="radio" name="stsModeRadio" value="THIRTY_SECONDS" class="mt-0.5 accent-blue-600">
+          </div>
+          <div class="mt-3 text-[11px] text-amber-700 bg-amber-50 px-2 py-1 rounded border border-amber-200">
+            開始・離臀・終了 / 30秒超過試行除外
+          </div>
+        </label>
+      </div>
+
+      <!-- Instant UI Synchronizer for Mode Cards (Runs immediately without waiting for async modules) -->
+      <script>
+        (function() {
+          const cards = document.querySelectorAll('.mode-card');
+          const radios = document.querySelectorAll('input[name="stsModeRadio"]');
+          const headerBadge = document.getElementById('activeModeBadgeHeader');
+          const reportBadge = document.getElementById('reportModeBadge');
+          const thirtyCard = document.getElementById('thirtySecAdjustCard');
+          const stableBox = document.getElementById('stableActionBox');
+
+          const modeTitles = {
+            'SINGLE': '通常立ち上がり',
+            'FIVE_TIMES': '5回立ち座り (5STS)',
+            'THIRTY_SECONDS': '30秒立ち座り (30s-STS)'
+          };
+
+          function syncModeCardUI(val) {
+            cards.forEach(card => {
+              const r = card.querySelector('input[type="radio"]');
+              if (r.value === val) {
+                r.checked = true;
+                card.className = "mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500";
+              } else {
+                card.className = "mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300";
+              }
+            });
+            const title = modeTitles[val] || '通常立ち上がり';
+            if (headerBadge) headerBadge.innerText = title;
+            if (reportBadge) reportBadge.innerText = title;
+            if (thirtyCard) thirtyCard.classList.toggle('hidden', val !== 'THIRTY_SECONDS');
+            if (stableBox) stableBox.classList.toggle('hidden', val === 'THIRTY_SECONDS');
+          }
+
+          radios.forEach(r => {
+            r.addEventListener('change', function() {
+              syncModeCardUI(this.value);
+            });
+          });
+
+          cards.forEach(card => {
+            card.addEventListener('click', function() {
+              const r = this.querySelector('input[type="radio"]');
+              if (r) {
+                r.checked = true;
+                syncModeCardUI(r.value);
+                r.dispatchEvent(new Event('change'));
+              }
+            });
+          });
+
+          // Ensure video select button click opens file picker reliably
+          document.addEventListener('DOMContentLoaded', function() {
+            var btn = document.getElementById('selectVideoBtn');
+            var inp = document.getElementById('videoFileInput');
+            if (btn && inp) {
+              btn.onclick = function() { inp.click(); };
+            }
+          });
+          // Also bind immediately if DOM is already ready
+          var immediateBtn = document.getElementById('selectVideoBtn');
+          var immediateInp = document.getElementById('videoFileInput');
+          if (immediateBtn && immediateInp) {
+            immediateBtn.onclick = function() { immediateInp.click(); };
+          }
+        })();
+      </script>
+
+      <!-- Basic Anthropometrics & Camera Options -->
+      <div class="bg-slate-50 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs border border-slate-100">
+        <div class="flex flex-wrap items-center gap-6">
+          <label class="flex items-center gap-2">
+            <span class="font-semibold text-slate-700">被験者 身長:</span>
+            <input type="number" id="heightInput" value="170" class="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-800">
+            <span class="text-slate-500">cm</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <span class="font-semibold text-slate-700">被験者 体重:</span>
+            <input type="number" id="weightInput" value="65" class="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-center font-bold text-slate-800">
+            <span class="text-slate-500">kg</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="mirrorCheckbox" class="rounded text-blue-600 w-4 h-4">
+            <span class="font-medium text-slate-700">自撮りカメラ反転（前面インカメラ用）</span>
+          </label>
+        </div>
+
+        <div class="text-slate-400 text-[11px]">
+          ※ 体重と身長は推定床反力（GRF: %BW, N）の計算に利用されます
+        </div>
+      </div>
+
+      <!-- STEP 3: Video & LiDAR Input -->
+      <div class="pt-2 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
+          <div>
+            <div class="text-xs font-bold text-slate-900 flex items-center gap-2">
+              <span>動画ファイル ＆ LiDAR深度データ</span>
+              <span id="lidarStatusBadge" class="hidden text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                LiDAR実測深度 連動中
+              </span>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-0.5">動画のみで解析可能 / iPhone Pro等のLiDAR深度(JSON/CSV/動画)追加でミリ精度化</div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input type="file" id="videoFileInput" accept="video/*" class="sr-only">
+          <input type="file" id="lidarFileInput" accept=".json,.csv,video/*" class="sr-only">
+
+          <button id="selectVideoBtn" type="button" class="cursor-pointer px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-200 transition flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+            <span id="selectVideoBtnText">動画ファイルを選択</span>
+          </button>
+
+          <button id="selectLidarBtn" type="button" class="cursor-pointer px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition flex items-center gap-1.5" title="iPhone Pro等のLiDAR深度データ(JSON/CSV/Depth動画)を追加">
+            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
+            <span id="selectLidarBtnText">+ LiDAR深度追加</span>
+          </button>
+
+          <button id="clearLidarBtn" type="button" class="hidden text-slate-400 hover:text-rose-500 p-2 text-xs" title="LiDARデータを解除">
+            &times; 解除
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN INTERACTIVE ANALYSIS WORKSPACE -->
+    <div id="analysisWorkspace" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Video & Overlay & 3D Mesh Viewer (7 Cols) -->
+      <div class="lg:col-span-7 space-y-4">
+
+        <!-- Viewport Header: 2D / 3D / Split Mode Toggle & Camera View Presets -->
+        <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <!-- View Modes & Video Overlay Toggle -->
+          <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+              <button id="viewMode2dBtn" class="px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">2D骨格・軌跡</button>
+              <button id="viewMode3dBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                3Dメッシュ
+              </button>
+              <button id="viewModeSplitBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition">並列表示 (2D + 3D)</button>
+            </div>
+            <label class="hidden sm:inline-flex items-center gap-1 text-[11px] text-slate-600 font-medium cursor-pointer ml-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-100 transition" title="背景に実写動画を重ねて表示します（デフォルトは非表示）">
+              <input type="checkbox" id="overlayVideoToggle" class="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5">
+              <span>実写動画を重ねる</span>
+            </label>
+          </div>
+
+          <!-- 3D Camera Angles (Active only when 3D is visible) -->
+          <div id="camPresetButtons" class="flex items-center gap-1 text-[11px]">
+            <span class="text-slate-400 mr-1 font-medium">3D視点:</span>
+            <button id="camSagittalBtn" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition" title="矢状面（側面から前傾・屈伸を観察）">
+              矢状面(側面)
+            </button>
+            <button id="camFrontalBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="前面視（左右偏倚を観察）">
+              前面
+            </button>
+            <button id="camPerspectiveBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="斜め3D鳥瞰">
+              斜め3D
+            </button>
+            <button id="camTopBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="上面俯瞰（支持基底面とCoM）">
+              上面
+            </button>
+          </div>
+        </div>
+
+        <!-- Video & 3D Skeleton/Mesh Container -->
+        <div id="viewportsWrapper" class="grid grid-cols-1 gap-3">
+          <!-- 2D Video & Skeleton Overlay Viewport -->
+          <div id="viewport2d" class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] flex items-center justify-center">
+            <div id="videoTransformWrapper" class="w-full h-full relative flex items-center justify-center transition-transform duration-200">
+              <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
+              <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
+            </div>
+
+            <!-- Placeholder -->
+            <div id="videoPlaceholder" class="text-center p-8 space-y-3 z-10 pointer-events-none">
+              <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+              </div>
+              <p class="text-slate-300 font-medium text-sm">ステップ2で動画ファイルを選択してください</p>
+              <p class="text-slate-500 text-xs">MediaPipe Pose が立ち座り動作を自動トラッキングし3Dメッシュを構築します</p>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div id="analysisLoading" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 hidden z-20">
+              <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <p id="analysisProgressText" class="text-white text-sm font-semibold">動画を解析中... 0%</p>
+            </div>
+          </div>
+
+          <!-- 3D Three.js Mesh Viewport -->
+          <div id="viewport3d" class="bg-slate-950 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] hidden flex flex-col">
+            <div class="absolute top-3 left-3 z-10 bg-slate-900/80 backdrop-blur px-2.5 py-1 rounded-md text-[11px] text-slate-300 border border-slate-700/60 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>3D生体力学メッシュ (ドラッグ回転 / 右ドラッグ平行移動 / ホイール拡大縮小)</span>
+            </div>
+            <div id="sts3dContainer" class="w-full h-full flex-1 min-h-[300px]"></div>
+          </div>
+        </div>
+
+        <!-- TIMING IDENTIFICATION CONTROLLER (動画スクロール直下の同定操作パネル) -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+
+          <!-- 1. Trial Selection Tabs & Active Trial Info -->
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-900">対象の回:</span>
+              <div id="trialTabsList" class="flex items-center gap-1.5 overflow-x-auto max-w-[280px] sm:max-w-[380px] py-0.5">
+                <!-- Dynamically generated trial tabs -->
+                <span class="text-xs text-slate-400">動画解析後に選択可能</span>
+              </div>
+            </div>
+            <span id="activeTrialLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">未選択</span>
+          </div>
+
+          <!-- 2. Video Scroller (SeekBar) + Frame Step Buttons -->
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <button id="playPauseBtn" disabled class="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
+                <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="pauseIcon" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              </button>
+              <button id="stepPrevBtn" disabled title="前へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">◀ -1F</button>
+              <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
+              <button id="stepNextBtn" disabled title="次へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">+1F ▶</button>
+              <span id="timeDisplay" class="text-xs font-mono text-slate-600 whitespace-nowrap min-w-[90px] text-right">0.00s / 0.00s</span>
+            </div>
+          </div>
+
+          <!-- 3. Immediate Event Identification Buttons (現在のスクロール位置を各タイミングに設定) -->
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
+            <div class="flex items-center justify-between text-[11px] text-slate-500">
+              <span class="font-semibold text-slate-700">動画スクロール位置をタイミングにセット:</span>
+              <span>クリックで現在時刻を反映 / ジャンプでそのコマへ移動</span>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <!-- Set Start -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-blue-700 font-bold">
+                  <span>● 開始</span>
+                  <button id="jumpStartBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-blue-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispStartTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setStartBtn" class="w-full py-1 bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Seat-Off -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-orange-600 font-bold">
+                  <span>● 離臀</span>
+                  <button id="jumpSeatBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-orange-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispSeatTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setSeatBtn" class="w-full py-1 bg-orange-50 hover:bg-orange-500 text-orange-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Stand-End -->
+              <div class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-emerald-600 font-bold">
+                  <span>● 終了</span>
+                  <button id="jumpEndBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-emerald-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispEndTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setEndBtn" class="w-full py-1 bg-emerald-50 hover:bg-emerald-600 text-emerald-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+
+              <!-- Set Stable (Hidden in 30s-STS) -->
+              <div id="stableActionBox" class="bg-white p-2 rounded-lg border border-slate-200 flex flex-col justify-between shadow-2xs">
+                <div class="flex justify-between items-center text-[10px] text-purple-600 font-bold">
+                  <span>● 立位安定</span>
+                  <button id="jumpStableBtn" title="この時刻へ動画をジャンプ" class="text-slate-400 hover:text-purple-600 text-[10px]">飛ぶ ↗</button>
+                </div>
+                <div id="dispStableTime" class="text-xs font-mono font-bold text-slate-800 my-1">-- s</div>
+                <button id="setStableBtn" class="w-full py-1 bg-purple-50 hover:bg-purple-600 text-purple-700 hover:text-white font-semibold rounded text-[11px] transition">
+                  現在位置をセット
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. Failed Attempts Management Card (失敗試行・離臀失敗の記録・追加・削除) -->
+          <div class="bg-rose-50/70 border border-rose-200 p-3 rounded-xl space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5 text-xs font-bold text-rose-800">
+                <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                <span>失敗試行（離臀失敗）の記録</span>
+              </div>
+              <button id="addFailAtCurrentBtn" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-semibold transition flex items-center gap-1 shadow-xs">
+                <span>＋ 現在位置を離臀失敗として記録</span>
+              </button>
+            </div>
+
+            <!-- List of recorded failed attempts -->
+            <div id="failedAttemptsContainer" class="flex flex-wrap gap-1.5 pt-1">
+              <span class="text-slate-400 text-xs">記録された失敗試行はありません</span>
+            </div>
+          </div>
+
+          <!-- Status Banner -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500">現フレーム状態:</span>
+              <span id="currentPhaseBadge" class="badge bg-blue-100 text-blue-700 font-medium">待機</span>
+            </div>
+            <div class="flex items-center gap-4 text-slate-700">
+              <div>重心偏倚: <span id="currentBiasText" class="font-bold">50.0%</span></div>
+              <div>鉛直GRF: <span id="currentGrfText" class="font-bold">100%BW</span></div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Right Column: Reports, 30s-STS Controls & Graphs (5 Cols) -->
+      <div class="lg:col-span-5 space-y-4">
+
+        <!-- 30s-STS Reps Adjustment Card (Visible only in 30s-STS mode) -->
+        <div id="thirtySecAdjustCard" class="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-3 hidden">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <h3 class="text-xs font-bold text-amber-900">30秒立ち座り 立ち上がり総数</h3>
+            </div>
+            <span class="text-xs text-amber-700 font-medium">動画確認後に確定</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="minusRepBtn" class="w-9 h-9 rounded-xl bg-white border border-amber-300 font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm">－</button>
+            <input type="number" id="thirtySecRepsInput" min="1" max="60" value="10" class="flex-1 py-1.5 bg-white border border-amber-300 rounded-xl text-center font-bold text-amber-900 text-base shadow-sm">
+            <button id="plusRepBtn" class="w-9 h-9 rounded-xl bg-white border border-amber-300 font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm">＋</button>
+            <button id="applyRepsBtn" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-xl shadow-sm transition">総数を反映</button>
+          </div>
+          <p class="text-[11px] text-amber-700 leading-tight">※ 第1回開始から30秒を経過した試行（6回目等）は自動的に除外されます。</p>
+        </div>
+
+        <!-- Overall Summary Report Card -->
+        <div id="summaryReportCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+              総合解析レポート
+            </h2>
+            <span id="reportModeBadge" class="badge bg-slate-100 text-slate-700">通常立ち上がり</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div class="text-[11px] text-slate-500" id="totalDurationLabel">トータル所要時間</div>
+              <div id="totalDurationVal" class="text-xl font-bold text-slate-800 mt-0.5">-- s</div>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div class="text-[11px] text-slate-500" id="repsCountLabel">完了試行数</div>
+              <div id="repsCountVal" class="text-xl font-bold text-blue-600 mt-0.5">-- 回</div>
+            </div>
+          </div>
+
+          <!-- Total / Success / Failed Stats -->
+          <div id="attemptStatsRow" class="grid grid-cols-3 gap-2 text-center text-xs pt-1 border-t border-slate-100">
+            <div class="p-2 bg-slate-50 rounded-lg">
+              <div class="text-[10px] text-slate-400">総試行数</div>
+              <div id="statTotalAttempts" class="font-bold text-slate-700">--</div>
+            </div>
+            <div class="p-2 bg-emerald-50 rounded-lg text-emerald-700">
+              <div class="text-[10px] text-emerald-500">成功数 / 確率</div>
+              <div id="statSuccessCount" class="font-bold">--</div>
+            </div>
+            <div class="p-2 bg-rose-50 rounded-lg text-rose-700">
+              <div class="text-[10px] text-rose-500">離臀失敗 / 確率</div>
+              <div id="statFailCount" class="font-bold">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sagittal & 3D Kinematics Metrics Card (矢状面・3D生体力学指標) -->
+        <div id="sagittal3dCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+              3D・矢状面キネマティクス指標 (Sagittal Biomechanics)
+            </h3>
+            <span class="text-[10px] text-indigo-700 bg-indigo-50 font-bold px-2 py-0.5 rounded">3D推定</span>
+          </div>
+
+          <!-- Key Sagittal Metrics Grid -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <!-- 1. 離臀時 CoM-足首前後距離 -->
+            <div class="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100">
+              <div class="text-[11px] font-semibold text-indigo-900 flex items-center justify-between">
+                <span>離臀時 CoM-足首前後距離</span>
+                <span class="text-[9px] text-indigo-600 font-normal">支持基底面への近接</span>
+              </div>
+              <div class="mt-1 flex items-baseline gap-1">
+                <span id="dispSeatOffApDist" class="text-lg font-bold text-indigo-800">--</span>
+                <span class="text-xs text-indigo-600 font-semibold">cm</span>
+              </div>
+              <div class="text-[10px] text-indigo-500 mt-0.5">離臀瞬間の身体重心と足部支持位置</div>
+            </div>
+
+            <!-- 2. 前傾速度 (離臀前 最大前傾角速度) -->
+            <div class="bg-amber-50/60 p-3 rounded-xl border border-amber-100">
+              <div class="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
+                <span>最大体幹前傾速度</span>
+                <span class="text-[9px] text-amber-600 font-normal">助走推進力</span>
+              </div>
+              <div class="mt-1 flex items-baseline gap-1">
+                <span id="dispPeakPitchVel" class="text-lg font-bold text-amber-800">--</span>
+                <span class="text-xs text-amber-600 font-semibold">deg/s</span>
+              </div>
+              <div class="text-[10px] text-amber-600 mt-0.5">離臀前の体幹前屈角速度ピーク</div>
+            </div>
+          </div>
+
+          <!-- 3. 前後床反力 (AP-GRF: Anterior-Posterior Ground Reaction Force) -->
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2 text-xs">
+            <div class="flex items-center justify-between text-[11px] font-bold text-slate-800">
+              <span>前後床反力ピーク (AP-GRF)</span>
+              <span class="text-[10px] text-slate-400 font-normal">離臀〜立位完了時</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-blue-600 font-semibold">前方推進ピーク (Propulsion)</div>
+                <div id="dispApPropBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispApPropN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-purple-600 font-semibold">後方制動ピーク (Braking)</div>
+                <div id="dispApBrakeBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispApBrakeN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. 矢状面可動域 (ROM) & 移動量 -->
+          <div class="grid grid-cols-4 gap-2 text-center text-xs">
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">体幹最大前傾</div>
+              <div id="dispMaxTrunkFlex" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">股関節最大屈曲</div>
+              <div id="dispMaxHipFlex" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">膝伸展可動域</div>
+              <div id="dispKneeRom" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">前後CoM移動幅</div>
+              <div id="dispApComExcursion" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Knee-Hip Angle-Angle Diagram Card (サイクログラム) -->
+        <div id="angleAngleCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+            <div>
+              <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                膝伸展・股関節伸展 Angle-Angle Diagram
+              </h3>
+              <p class="text-[10px] text-slate-400 mt-0.5">
+                横軸: 膝屈曲 (°) ／ 縦軸: 股関節屈曲 (°) （○開始 → ◆離臀 → ■起立完了）
+              </p>
+            </div>
+            <!-- Trial Selection Tabs for Angle-Angle Diagram -->
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] text-slate-400 mr-1 font-medium hidden sm:inline">表示:</span>
+              <div id="angleDiagramTabs" class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] overflow-x-auto max-w-[240px] sm:max-w-[320px]">
+                <button data-rep="ALL" class="angle-tab-btn px-2.5 py-1 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">全体重ね合わせ</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="h-64 relative bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+            <canvas id="angleAngleChart"></canvas>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+            <div class="flex items-center gap-2">
+              <span class="inline-block w-2 h-2 rounded-full border border-slate-400 bg-white"></span><span>○開始</span>
+              <span class="inline-block w-2 h-2 bg-indigo-500 rotate-45"></span><span>◆離臀</span>
+              <span class="inline-block w-2 h-2 bg-emerald-500"></span><span>■起立完了</span>
+            </div>
+            <span class="text-emerald-700 font-semibold">右上（座位屈曲位）から左下（立位伸展位 0°, 0°）へ進行</span>
+          </div>
+        </div>
+
+        <!-- Cumulative Time Graph Card -->
+        <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-cyan-500"></span>
+              各回累積時間 & 立ち上がり時間
+            </h3>
+            <span class="text-[10px] text-slate-400">所要時間推移</span>
+          </div>
+          <div class="h-44 relative">
+            <canvas id="cumTimeChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Lateral Bias Graph Card -->
+        <div id="biasGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+              重心左右偏倚推移 (50%正中基準)
+            </h3>
+            <span class="text-[10px] text-slate-400">青:左 / 橙:右 / ◆:離臀時</span>
+          </div>
+          <div class="h-44 relative">
+            <canvas id="biasChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- REPORT PREVIEW MODAL & A4 PRINT CONTAINER -->
+  <div id="reportPreviewModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+    <div id="reportModalCard" class="bg-white rounded-2xl max-w-6xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Modal Header -->
+      <div class="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50">
+        <div class="flex items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-sm">A4</span>
+          <div>
+            <h3 class="text-sm font-bold text-slate-900">A4レポート 印刷・出力プレビュー</h3>
+            <p class="text-[11px] text-slate-500">1枚の用紙に生体力学指標・スティックピクチャ・グラフを収めて印刷/PDF保存します</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <!-- Orientation Switcher (Landscape by default) -->
+          <div class="flex items-center bg-slate-200/90 p-0.5 rounded-lg text-xs font-semibold">
+            <button id="orientLandscapeBtn" type="button" class="px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm flex items-center gap-1 transition font-bold" title="A4横長(横向き)で出力">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" stroke-width="2"/></svg>
+              横長 (A4横)
+            </button>
+            <button id="orientPortraitBtn" type="button" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 flex items-center gap-1 transition" title="A4縦長(縦向き)で出力">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2" stroke-width="2"/></svg>
+              縦長 (A4縦)
+            </button>
+          </div>
+
+          <button id="triggerPrintBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            印刷 / PDF保存
+          </button>
+          <button id="closeReportModalBtn" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition text-lg leading-none font-bold">&times;</button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable preview wrapper) -->
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center">
+        <!-- Rendered A4 Sheet (Target of print) -->
+        <div id="a4PrintContainer" class="bg-white w-full max-w-[1040px] p-6 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-3">
+          <!-- Dynamically populated report content -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Script (ES Module) -->
+  <script type="module">
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_20";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_20";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_20";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_20";
+    import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    // Application State
+    let currentMode = StsMode.SINGLE;
+    let anthropometrics = new SubjectAnthropometrics(170, 65);
+    let isFrontCameraMirrored = false;
+    let poseLandmarker = null;
+    let analysisResult = null;
+    let selectedTrialIdx = 0;
+    let rawExtractedFrames = [];
+
+    // 3D Viewer & View Mode State
+    let sts3dViewer = null;
+    let currentViewMode = "2d"; // '2d', '3d', 'split'
+
+    // DOM Elements
+    const video = document.getElementById("videoElement");
+    const canvas = document.getElementById("overlayCanvas");
+    const ctx = canvas.getContext("2d");
+    const placeholder = document.getElementById("videoPlaceholder");
+    const loadingOverlay = document.getElementById("analysisLoading");
+    const progressText = document.getElementById("analysisProgressText");
+    const fileInput = document.getElementById("videoFileInput");
+    const selectVideoBtn = document.getElementById("selectVideoBtn");
+    if (selectVideoBtn) {
+      selectVideoBtn.onclick = () => fileInput.click();
+    }
+
+    // LiDAR Depth Controls
+    let rawLidarFrames = null;
+    const lidarFileInput = document.getElementById("lidarFileInput");
+    const selectLidarBtn = document.getElementById("selectLidarBtn");
+    const selectLidarBtnText = document.getElementById("selectLidarBtnText");
+    const lidarStatusBadge = document.getElementById("lidarStatusBadge");
+    const clearLidarBtn = document.getElementById("clearLidarBtn");
+
+    if (selectLidarBtn) {
+      selectLidarBtn.onclick = () => lidarFileInput.click();
+    }
+
+    if (clearLidarBtn) {
+      clearLidarBtn.onclick = () => {
+        rawLidarFrames = null;
+        if (lidarFileInput) lidarFileInput.value = "";
+        if (lidarStatusBadge) lidarStatusBadge.classList.add("hidden");
+        if (clearLidarBtn) clearLidarBtn.classList.add("hidden");
+        if (selectLidarBtnText) selectLidarBtnText.innerText = "+ LiDAR深度追加";
+        if (selectLidarBtn) selectLidarBtn.classList.remove("bg-emerald-50", "border-emerald-300", "text-emerald-700");
+        if (rawExtractedFrames.length >= 5) {
+          runFullAnalysis();
+        }
+      };
+    }
+
+    // Native iOS App (iPad Pro ARKit + LiDAR) 一括測定ブリッジ
+    window.loadNativeARKitData = function(jsonStr, modeStr) {
+      try {
+        const frames = (typeof jsonStr === "string") ? JSON.parse(jsonStr) : jsonStr;
+        if (!Array.isArray(frames) || frames.length < 5) {
+          console.warn("Invalid native ARKit frames count:", frames?.length);
+          return;
+        }
+
+        if (modeStr) {
+          const modeKey = Object.keys(StsMode).find(k => StsMode[k].id === modeStr || k === modeStr);
+          if (modeKey && StsMode[modeKey]) {
+            currentMode = StsMode[modeKey];
+            const r = document.querySelector(`input[name="stsMode"][value="${currentMode.id}"]`);
+            if (r) {
+              r.checked = true;
+              r.dispatchEvent(new Event('change'));
+            }
+          }
+        }
+
+        rawExtractedFrames = frames.map(f => {
+          const lmMap = {};
+          if (f.landmarks) {
+            for (const [k, pt] of Object.entries(f.landmarks)) {
+              lmMap[parseInt(k, 10)] = new Point2D(pt.x, pt.y);
+            }
+          }
+          const wlmMap = {};
+          if (f.worldLandmarks) {
+            for (const [k, pt] of Object.entries(f.worldLandmarks)) {
+              wlmMap[parseInt(k, 10)] = new Point3D(pt.x, pt.y, pt.z, pt.visibility || 0.99);
+            }
+          }
+          return new PoseFrameData({
+            timestampMs: f.timestampMs,
+            landmarks: lmMap,
+            worldLandmarks: wlmMap
+          });
+        });
+
+        if (lidarStatusBadge) {
+          lidarStatusBadge.classList.remove("hidden");
+          lidarStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> iPad Pro LiDAR実測連動中 (${rawExtractedFrames.length}フレーム)`;
+        }
+
+        runFullAnalysis();
+        console.log("Native ARKit LiDAR data processed successfully:", rawExtractedFrames.length, "frames");
+      } catch (err) {
+        console.error("Failed to load native ARKit data:", err);
+      }
+    };
+
+    // LiDAR Data Parser (JSON & CSV & Summary)
+    function parseLidarContent(text, fileName) {
+      const trimmed = text.trim();
+      const isJson = fileName.toLowerCase().endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[');
+      if (isJson) {
+        return parseLidarJson(trimmed);
+      } else {
+        return parseLidarCsv(trimmed);
+      }
+    }
+
+    function parseLidarJson(jsonText) {
+      const parsed = JSON.parse(jsonText);
+      let records = [];
+      if (Array.isArray(parsed)) {
+        records = parsed;
+      } else if (parsed.frames && Array.isArray(parsed.frames)) {
+        records = parsed.frames;
+      } else if (parsed.data && Array.isArray(parsed.data)) {
+        records = parsed.data;
+      } else if (parsed.records && Array.isArray(parsed.records)) {
+        records = parsed.records;
+      } else {
+        throw new Error("JSON内に有効なフレーム配列(frames/data/records)が見つかりません。");
+      }
+
+      const results = [];
+      const nameMap = {
+        shoulder_l: 11, shoulder_r: 12, shoulder: 11,
+        elbow_l: 13, elbow_r: 14,
+        wrist_l: 15, wrist_r: 16,
+        hip_l: 23, hip_r: 24, hip: 23,
+        knee_l: 25, knee_r: 26, knee: 25,
+        ankle_l: 27, ankle_r: 28, ankle: 27,
+        heel_l: 29, heel_r: 30,
+        foot_l: 31, foot_r: 32, foot: 31,
+        head: 0, nose: 0
+      };
+
+      records.forEach((rec, idx) => {
+        let tMs = 0;
+        if (typeof rec.timestampMs === 'number') {
+          tMs = rec.timestampMs;
+        } else if (typeof rec.timeMs === 'number') {
+          tMs = rec.timeMs;
+        } else if (typeof rec.time === 'number') {
+          tMs = Math.round(rec.time * 1000);
+        } else if (typeof rec.timestamp === 'number') {
+          tMs = rec.timestamp < 10000 ? Math.round(rec.timestamp * 1000) : rec.timestamp;
+        } else {
+          tMs = Math.round(idx * (1000.0 / 30.0));
+        }
+
+        const jointDepths = {};
+        const rawJoints = rec.joints || rec.depths || rec.landmarks || rec;
+
+        if (rawJoints && typeof rawJoints === 'object') {
+          for (const [k, v] of Object.entries(rawJoints)) {
+            const numKey = parseInt(k, 10);
+            const val = typeof v === 'number' ? v : (v && typeof v.z === 'number' ? v.z : (v && typeof v.depth === 'number' ? v.depth : null));
+            if (val !== null && !isNaN(val)) {
+              if (!isNaN(numKey)) {
+                jointDepths[numKey] = val;
+              } else {
+                const lk = k.toLowerCase().replace(/[^a-z0-9_]/g, '');
+                for (const [pattern, targetId] of Object.entries(nameMap)) {
+                  if (lk.includes(pattern)) {
+                    jointDepths[targetId] = val;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        const baseDepth = typeof rec.depth === 'number' ? rec.depth : (typeof rec.distance === 'number' ? rec.distance : null);
+
+        results.push({
+          timestampMs: tMs,
+          jointDepths,
+          baseDepth
+        });
+      });
+
+      results.sort((a, b) => a.timestampMs - b.timestampMs);
+      return results;
+    }
+
+    function parseLidarCsv(csvText) {
+      const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length < 2) throw new Error("CSV行数が不足しています。");
+
+      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
+      let timeCol = header.findIndex(h => h.includes('time') || h.includes('timestamp') || h === 't' || h === 'sec');
+
+      const jointColMap = {};
+      const nameMap = {
+        'shoulder_l': 11, 'shoulder_r': 12, 'shoulder': 11,
+        'hip_l': 23, 'hip_r': 24, 'hip': 23,
+        'knee_l': 25, 'knee_r': 26, 'knee': 25,
+        'ankle_l': 27, 'ankle_r': 28, 'ankle': 27,
+        'foot_l': 31, 'foot_r': 32, 'foot': 31
+      };
+
+      header.forEach((col, idx) => {
+        const numMatch = col.match(/(?:z|depth)[\-_]?(\d+)/) || col.match(/^(\d+)$/);
+        if (numMatch) {
+          jointColMap[parseInt(numMatch[1], 10)] = idx;
+        } else {
+          for (const [pattern, targetId] of Object.entries(nameMap)) {
+            if (col.includes(pattern)) {
+              jointColMap[targetId] = idx;
+              break;
+            }
+          }
+        }
+      });
+
+      const results = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => parseFloat(c.trim()));
+        if (cols.some(c => !isNaN(c))) {
+          let tMs = 0;
+          if (timeCol >= 0 && !isNaN(cols[timeCol])) {
+            const val = cols[timeCol];
+            tMs = val < 1000 ? Math.round(val * 1000) : Math.round(val);
+          } else {
+            tMs = Math.round((i - 1) * (1000.0 / 30.0));
+          }
+
+          const jointDepths = {};
+          for (const [jointId, colIdx] of Object.entries(jointColMap)) {
+            const val = cols[colIdx];
+            if (!isNaN(val)) {
+              jointDepths[parseInt(jointId, 10)] = val;
+            }
+          }
+
+          results.push({
+            timestampMs: tMs,
+            jointDepths,
+            baseDepth: cols[1] && !isNaN(cols[1]) ? cols[1] : null
+          });
+        }
+      }
+
+      results.sort((a, b) => a.timestampMs - b.timestampMs);
+      return results;
+    }
+
+    // LiDAR 深度フュージョン適用関数
+    function applyLidarFusionToRawFrames(rawFrames, lidarData) {
+      if (!lidarData || lidarData.length === 0 || !rawFrames || rawFrames.length === 0) {
+        return rawFrames;
+      }
+
+      const l0 = lidarData[0].timestampMs;
+      const f0 = rawFrames[0].timestampMs;
+      const tOffset = (l0 > 10000 && f0 < 1000) ? l0 - f0 : 0;
+
+      return rawFrames.map(frame => {
+        const queryTime = frame.timestampMs + tOffset;
+
+        // 最近傍探索
+        let bestLidar = lidarData[0];
+        let minDiff = Math.abs(lidarData[0].timestampMs - queryTime);
+        for (let j = 1; j < lidarData.length; j++) {
+          const diff = Math.abs(lidarData[j].timestampMs - queryTime);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestLidar = lidarData[j];
+          }
+          if (lidarData[j].timestampMs > queryTime && diff > minDiff) break;
+        }
+
+        if (!bestLidar) return frame;
+
+        const newWorldLm = {};
+        const origWlm = frame.worldLandmarks || {};
+
+        // 基準点深度: 足首(27,28)または腰(23,24)
+        const refJoints = [27, 28, 23, 24];
+        let refZ = null;
+        for (const rId of refJoints) {
+          if (bestLidar.jointDepths && typeof bestLidar.jointDepths[rId] === 'number') {
+            refZ = bestLidar.jointDepths[rId];
+            break;
+          }
+        }
+        if (refZ === null && typeof bestLidar.baseDepth === 'number') {
+          refZ = bestLidar.baseDepth;
+        }
+
+        for (const [idStr, pt] of Object.entries(origWlm)) {
+          const id = parseInt(idStr, 10);
+          let updatedZ = pt.z;
+
+          if (bestLidar.jointDepths && typeof bestLidar.jointDepths[id] === 'number') {
+            const rawLidarZ = bestLidar.jointDepths[id];
+            if (refZ !== null) {
+              // 実測相対深度 (カメラ方向への前傾・前進で生じるZ変位をミリ精度反映)
+              updatedZ = rawLidarZ - refZ;
+            }
+          } else if (refZ !== null && typeof bestLidar.baseDepth === 'number') {
+            updatedZ = pt.z * (bestLidar.baseDepth / 2.0);
+          }
+
+          newWorldLm[id] = new Point3D(pt.x, pt.y, updatedZ, pt.visibility);
+        }
+
+        return new PoseFrameData({
+          ...frame,
+          worldLandmarks: newWorldLm
+        });
+      });
+    }
+
+    if (lidarFileInput) {
+      lidarFileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          rawLidarFrames = parseLidarContent(text, file.name);
+
+          if (lidarStatusBadge) {
+            lidarStatusBadge.classList.remove("hidden");
+            lidarStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> LiDAR実測深度 連動中 (${rawLidarFrames.length}点)`;
+          }
+          if (clearLidarBtn) clearLidarBtn.classList.remove("hidden");
+          if (selectLidarBtnText) selectLidarBtnText.innerText = "LiDAR読込済";
+          if (selectLidarBtn) selectLidarBtn.classList.add("bg-emerald-50", "border-emerald-300", "text-emerald-700");
+
+          if (rawExtractedFrames.length >= 5) {
+            runFullAnalysis();
+          } else {
+            alert(`LiDAR実測深度データ（${rawLidarFrames.length}フレーム）を読み込みました。\n次に動画ファイルを選択して解析を開始してください。実測深度が自動フュージョンされます。`);
+          }
+        } catch (err) {
+          console.error("LiDAR parse error:", err);
+          alert("LiDAR深度データの解析に失敗しました: " + err.message);
+          if (clearLidarBtn) clearLidarBtn.click();
+        }
+      };
+    }
+
+    const playPauseBtn = document.getElementById("playPauseBtn");
+    const playIcon = document.getElementById("playIcon");
+    const pauseIcon = document.getElementById("pauseIcon");
+    const seekBar = document.getElementById("seekBar");
+    const stepPrevBtn = document.getElementById("stepPrevBtn");
+    const stepNextBtn = document.getElementById("stepNextBtn");
+    const timeDisplay = document.getElementById("timeDisplay");
+    const exportCsvBtn = document.getElementById("exportCsvBtn");
+    const openReportBtn = document.getElementById("openReportBtn");
+
+    // Video Overlay Visibility Control (デフォルト：実写動画は重ねない)
+    const overlayVideoToggle = document.getElementById("overlayVideoToggle");
+    function updateVideoVisibility() {
+      const showVideo = overlayVideoToggle ? overlayVideoToggle.checked : false;
+      if (video) {
+        if (showVideo) {
+          video.classList.remove("opacity-0");
+          video.style.opacity = "1";
+        } else {
+          video.classList.add("opacity-0");
+          video.style.opacity = "0";
+        }
+      }
+    }
+    if (overlayVideoToggle) {
+      overlayVideoToggle.checked = false; // デフォルト：実写動画は重ねない
+      overlayVideoToggle.onchange = () => {
+        updateVideoVisibility();
+        drawCurrentOverlay();
+      };
+    }
+
+    // Report Modal Elements
+    const reportPreviewModal = document.getElementById("reportPreviewModal");
+    const closeReportModalBtn = document.getElementById("closeReportModalBtn");
+    const triggerPrintBtn = document.getElementById("triggerPrintBtn");
+    const a4PrintContainer = document.getElementById("a4PrintContainer");
+    const orientLandscapeBtn = document.getElementById("orientLandscapeBtn");
+    const orientPortraitBtn = document.getElementById("orientPortraitBtn");
+    let currentReportOrientation = "landscape"; // default to A4横長 (Landscape)
+
+    // Camera & Mirror Elements
+    const videoTransformWrapper = document.getElementById("videoTransformWrapper");
+    const mirrorCheckbox = document.getElementById("mirrorCheckbox");
+    const heightInput = document.getElementById("heightInput");
+    const weightInput = document.getElementById("weightInput");
+
+    // Mode Radio Cards
+    const modeCards = document.querySelectorAll(".mode-card");
+    const modeRadios = document.querySelectorAll('input[name="stsModeRadio"]');
+    const headerModeBadge = document.getElementById("activeModeBadgeHeader");
+    const thirtySecAdjustCard = document.getElementById("thirtySecAdjustCard");
+    const stableActionBox = document.getElementById("stableActionBox");
+
+    // Timing Buttons & Displays
+    const trialTabsList = document.getElementById("trialTabsList");
+    const activeTrialLabel = document.getElementById("activeTrialLabel");
+    const dispStartTime = document.getElementById("dispStartTime");
+    const dispSeatTime = document.getElementById("dispSeatTime");
+    const dispEndTime = document.getElementById("dispEndTime");
+    const dispStableTime = document.getElementById("dispStableTime");
+
+    const setStartBtn = document.getElementById("setStartBtn");
+    const setSeatBtn = document.getElementById("setSeatBtn");
+    const setEndBtn = document.getElementById("setEndBtn");
+    const setStableBtn = document.getElementById("setStableBtn");
+
+    const jumpStartBtn = document.getElementById("jumpStartBtn");
+    const jumpSeatBtn = document.getElementById("jumpSeatBtn");
+    const jumpEndBtn = document.getElementById("jumpEndBtn");
+    const jumpStableBtn = document.getElementById("jumpStableBtn");
+
+    // Failed Attempts
+    const addFailAtCurrentBtn = document.getElementById("addFailAtCurrentBtn");
+    const failedAttemptsContainer = document.getElementById("failedAttemptsContainer");
+
+    // 30s-STS Controls
+    const thirtySecRepsInput = document.getElementById("thirtySecRepsInput");
+    const minusRepBtn = document.getElementById("minusRepBtn");
+    const plusRepBtn = document.getElementById("plusRepBtn");
+    const applyRepsBtn = document.getElementById("applyRepsBtn");
+
+    // Charts
+    let cumTimeChart = null;
+    let biasChart = null;
+    let angleAngleChart = null;
+    let currentAngleRep = 'ALL';
+
+    // Initialize MediaPipe Pose Landmarker
+    async function initMediaPipe() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+        );
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1
+        });
+        console.log("MediaPipe Pose Landmarker ready.");
+      } catch (err) {
+        console.error("Failed to load MediaPipe:", err);
+      }
+    }
+    initMediaPipe();
+
+    // 3D Viewport DOM Elements & Controls
+    const viewportsWrapper = document.getElementById("viewportsWrapper");
+    const viewport2d = document.getElementById("viewport2d");
+    const viewport3d = document.getElementById("viewport3d");
+    const sts3dContainer = document.getElementById("sts3dContainer");
+
+    const viewMode2dBtn = document.getElementById("viewMode2dBtn");
+    const viewMode3dBtn = document.getElementById("viewMode3dBtn");
+    const viewModeSplitBtn = document.getElementById("viewModeSplitBtn");
+
+    const camSagittalBtn = document.getElementById("camSagittalBtn");
+    const camFrontalBtn = document.getElementById("camFrontalBtn");
+    const camPerspectiveBtn = document.getElementById("camPerspectiveBtn");
+    const camTopBtn = document.getElementById("camTopBtn");
+
+    // Safe Lazy 3D Viewer Initializer
+    function ensure3dViewerInitialized() {
+      if (!sts3dViewer && sts3dContainer && window.THREE && typeof Sts3dViewer !== 'undefined') {
+        try {
+          sts3dViewer = new Sts3dViewer(sts3dContainer);
+          sts3dViewer.setMirrored(isFrontCameraMirrored);
+          if (analysisResult && analysisResult.frames) {
+            sts3dViewer.loadFrames(analysisResult.frames);
+          }
+        } catch (e) {
+          console.warn("Lazy 3D viewer init error:", e);
+        }
+      }
+      return sts3dViewer;
+    }
+
+    // View Mode Toggle Logic
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      const activeClass = "px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition";
+      const inactiveClass = "px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition";
+
+      viewMode2dBtn.className = mode === "2d" ? activeClass : inactiveClass;
+      viewMode3dBtn.className = (mode === "3d" ? activeClass : inactiveClass) + " flex items-center gap-1.5";
+      viewModeSplitBtn.className = mode === "split" ? activeClass : inactiveClass;
+
+      if (mode === "2d") {
+        viewport2d.classList.remove("hidden");
+        viewport3d.classList.add("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 gap-3";
+      } else if (mode === "3d") {
+        viewport2d.classList.add("hidden");
+        viewport3d.classList.remove("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 gap-3";
+        ensure3dViewerInitialized();
+        if (sts3dViewer) sts3dViewer.onResize();
+      } else if (mode === "split") {
+        viewport2d.classList.remove("hidden");
+        viewport3d.classList.remove("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
+        ensure3dViewerInitialized();
+        if (sts3dViewer) sts3dViewer.onResize();
+      }
+    }
+
+    viewMode2dBtn.onclick = () => setViewMode("2d");
+    viewMode3dBtn.onclick = () => setViewMode("3d");
+    viewModeSplitBtn.onclick = () => setViewMode("split");
+
+    // 3D Camera Preset Buttons
+    function setCamPresetActive(activeBtn) {
+      [camSagittalBtn, camFrontalBtn, camPerspectiveBtn, camTopBtn].forEach(btn => {
+        btn.className = "px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition";
+      });
+      activeBtn.className = "px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition";
+    }
+
+    camSagittalBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("sagittal");
+      setCamPresetActive(camSagittalBtn);
+    };
+    camFrontalBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("frontal");
+      setCamPresetActive(camFrontalBtn);
+    };
+    camPerspectiveBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("perspective");
+      setCamPresetActive(camPerspectiveBtn);
+    };
+    camTopBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("top");
+      setCamPresetActive(camTopBtn);
+    };
+
+    // Mode Selection Handling
+    modeRadios.forEach(radio => {
+      radio.onchange = () => {
+        const val = radio.value;
+        if (val === "SINGLE") currentMode = StsMode.SINGLE;
+        if (val === "FIVE_TIMES") currentMode = StsMode.FIVE_TIMES;
+        if (val === "THIRTY_SECONDS") currentMode = StsMode.THIRTY_SECONDS;
+
+        modeCards.forEach(card => {
+          const r = card.querySelector('input[type="radio"]');
+          if (r.checked) {
+            card.className = "mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500";
+          } else {
+            card.className = "mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300";
+          }
+        });
+
+        headerModeBadge.innerText = currentMode.title;
+        document.getElementById("reportModeBadge").innerText = currentMode.title;
+        thirtySecAdjustCard.classList.toggle("hidden", currentMode !== StsMode.THIRTY_SECONDS);
+        stableActionBox.classList.toggle("hidden", currentMode === StsMode.THIRTY_SECONDS);
+
+        if (rawExtractedFrames.length > 5) {
+          runFullAnalysis();
+        }
+      };
+    });
+
+    // Mirror / In-Camera Transform Control
+    function applyMirrorTransform() {
+      const isMirrored = mirrorCheckbox.checked;
+      isFrontCameraMirrored = isMirrored;
+      if (videoTransformWrapper) {
+        videoTransformWrapper.style.transform = isMirrored ? "scaleX(-1)" : "scaleX(1)";
+      }
+      if (sts3dViewer) {
+        sts3dViewer.setMirrored(isMirrored);
+      }
+    }
+
+    mirrorCheckbox.onchange = () => {
+      applyMirrorTransform();
+      if (rawExtractedFrames.length >= 5) {
+        runFullAnalysis();
+      }
+    };
+
+    heightInput.onchange = () => {
+      if (rawExtractedFrames.length >= 5) runFullAnalysis();
+    };
+    weightInput.onchange = () => {
+      if (rawExtractedFrames.length >= 5) runFullAnalysis();
+    };
+
+    // 30s-STS Controls
+    minusRepBtn.onclick = () => {
+      thirtySecRepsInput.value = Math.max(1, parseInt(thirtySecRepsInput.value || 1) - 1);
+    };
+    plusRepBtn.onclick = () => {
+      thirtySecRepsInput.value = Math.min(60, parseInt(thirtySecRepsInput.value || 1) + 1);
+    };
+    applyRepsBtn.onclick = () => {
+      const newCount = parseInt(thirtySecRepsInput.value || 10);
+      if (analysisResult) {
+        analysisResult = StsMetricCalculator.adjustTrialsCount(analysisResult, newCount);
+        renderReport();
+        renderCharts();
+        renderTrialTabs();
+      }
+    };
+
+    // Video File Selection
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "動画ファイルを読み込み中...";
+
+      try {
+        const url = URL.createObjectURL(file);
+        video.src = url;
+        video.classList.remove("hidden");
+        updateVideoVisibility();
+        placeholder.classList.add("hidden");
+
+        // 動画のメタデータおよびデータ読み込みを確実に待機
+        await new Promise((resolve) => {
+          if (video.readyState >= 2 && video.videoWidth > 0 && !isNaN(video.duration)) {
+            resolve();
+          } else {
+            let resolved = false;
+            const onReady = () => {
+              if (!resolved) {
+                resolved = true;
+                video.removeEventListener("loadeddata", onReady);
+                video.removeEventListener("loadedmetadata", onReady);
+                video.removeEventListener("canplay", onReady);
+                resolve();
+              }
+            };
+            video.addEventListener("loadeddata", onReady);
+            video.addEventListener("loadedmetadata", onReady);
+            video.addEventListener("canplay", onReady);
+            setTimeout(onReady, 3500); // 最大3.5秒でフォールバック
+          }
+        });
+
+        // デコーダウォームアップ
+        try {
+          await video.play();
+          video.pause();
+        } catch (_) {}
+
+        canvas.width = video.videoWidth > 0 ? video.videoWidth : 640;
+        canvas.height = video.videoHeight > 0 ? video.videoHeight : 480;
+        applyMirrorTransform();
+
+        playPauseBtn.disabled = false;
+        stepPrevBtn.disabled = false;
+        stepNextBtn.disabled = false;
+        seekBar.disabled = false;
+
+        await extractFramesAndAnalyze();
+      } catch (err) {
+        console.error("Video load error:", err);
+        alert("動画の読み込み中にエラーが発生しました: " + err.message);
+        loadingOverlay.classList.add("hidden");
+      }
+    };
+
+    // Safe Video Seek Helper with Timeout
+    function seekVideoPromise(targetTimeSec) {
+      return new Promise((resolve) => {
+        if (Math.abs(video.currentTime - targetTimeSec) < 0.015) {
+          resolve();
+          return;
+        }
+
+        let done = false;
+        const cleanup = () => {
+          if (!done) {
+            done = true;
+            video.removeEventListener("seeked", onSeeked);
+            resolve();
+          }
+        };
+        const onSeeked = () => cleanup();
+
+        video.addEventListener("seeked", onSeeked, { once: true });
+        video.currentTime = targetTimeSec;
+
+        // 最大250msで必ずタイムアウトして次へ（フリーズ防止）
+        setTimeout(cleanup, 250);
+      });
+    }
+
+    // Frame Extraction & Pose Detection
+    async function extractFramesAndAnalyze() {
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "MediaPipe AIモデルを準備中...";
+
+      // MediaPipe 初期化の待機
+      if (!poseLandmarker) {
+        let waitCount = 0;
+        while (!poseLandmarker && waitCount < 40) {
+          await new Promise(r => setTimeout(r, 250));
+          waitCount++;
+        }
+        if (!poseLandmarker) {
+          alert("MediaPipeの初期化に失敗しました。ページを再読み込みしてください。");
+          loadingOverlay.classList.add("hidden");
+          return;
+        }
+      }
+
+      progressText.innerText = "動画を解析中... 0%";
+
+      try {
+        const rawDur = video.duration;
+        const duration = (rawDur && !isNaN(rawDur) && rawDur > 0) ? rawDur : 10;
+        const targetFps = 25.0;
+        const stepMs = 1000.0 / targetFps;
+        const totalSteps = Math.max(5, Math.floor((duration * 1000) / stepMs));
+
+        rawExtractedFrames = [];
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = video.videoWidth > 0 ? video.videoWidth : 640;
+        offCanvas.height = video.videoHeight > 0 ? video.videoHeight : 480;
+        const offCtx = offCanvas.getContext("2d", { willReadFrequently: true });
+
+        for (let i = 0; i <= totalSteps; i++) {
+          const timeMs = Math.round(i * stepMs);
+          await seekVideoPromise(timeMs / 1000.0);
+
+          offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+          let result = null;
+          try {
+            result = poseLandmarker.detectForVideo(offCanvas, timeMs);
+          } catch (e) {
+            console.warn(`Frame detection warning at ${timeMs}ms:`, e);
+          }
+
+          const lmMap = {};
+          if (result && result.landmarks && result.landmarks[0]) {
+            result.landmarks[0].forEach((lm, idx) => {
+              lmMap[idx] = new Point2D(lm.x, lm.y);
+            });
+          }
+
+          const worldLmMap = {};
+          if (result && result.worldLandmarks && result.worldLandmarks[0]) {
+            result.worldLandmarks[0].forEach((wlm, idx) => {
+              worldLmMap[idx] = new Point3D(wlm.x, wlm.y, wlm.z, wlm.visibility);
+            });
+          }
+
+          rawExtractedFrames.push(new PoseFrameData({
+            timestampMs: timeMs,
+            landmarks: lmMap,
+            worldLandmarks: worldLmMap
+          }));
+
+          if (i % 6 === 0) {
+            const pct = Math.round((i / totalSteps) * 100);
+            progressText.innerText = `動画を解析中... ${pct}%`;
+          }
+        }
+
+        video.currentTime = 0;
+        loadingOverlay.classList.add("hidden");
+
+        runFullAnalysis();
+      } catch (err) {
+        console.error("Frame extraction error:", err);
+        alert("動画解析中にエラーが発生しました: " + err.message);
+        loadingOverlay.classList.add("hidden");
+      }
+    }
+
+    function runFullAnalysis() {
+      if (rawExtractedFrames.length < 5) return;
+
+      anthropometrics.heightCm = parseFloat(document.getElementById("heightInput").value || 170);
+      anthropometrics.weightKg = parseFloat(document.getElementById("weightInput").value || 65);
+      isFrontCameraMirrored = document.getElementById("mirrorCheckbox").checked;
+
+      const custom30s = currentMode === StsMode.THIRTY_SECONDS
+        ? parseInt(thirtySecRepsInput.value || 10)
+        : null;
+
+      // LiDAR実測深度データがあればフュージョン適用
+      const effectiveFrames = (rawLidarFrames && rawLidarFrames.length > 0)
+        ? applyLidarFusionToRawFrames(rawExtractedFrames, rawLidarFrames)
+        : rawExtractedFrames;
+
+      analysisResult = StsMetricCalculator.calculate({
+        rawFrames: effectiveFrames,
+        mode: currentMode,
+        anthropometrics,
+        isFrontCameraMirrored,
+        customThirtySecReps: custom30s
+      });
+
+      if (currentViewMode !== "2d") {
+        ensure3dViewerInitialized();
+      }
+      if (sts3dViewer) {
+        try {
+          sts3dViewer.setMirrored(isFrontCameraMirrored);
+          sts3dViewer.loadFrames(analysisResult.frames);
+        } catch (e) {
+          console.warn("Failed to load frames into 3D viewer:", e);
+        }
+      }
+
+      exportCsvBtn.disabled = false;
+      openReportBtn.disabled = false;
+      renderReport();
+      renderCharts();
+      renderTrialTabs();
+      renderFailedAttemptsList();
+      drawCurrentOverlay();
+    }
+
+    function updateSagittal3dCard(trial) {
+      if (!trial) {
+        document.getElementById("dispSeatOffApDist").innerText = "--";
+        document.getElementById("dispPeakPitchVel").innerText = "--";
+        document.getElementById("dispApPropBw").innerText = "-- %BW";
+        document.getElementById("dispApPropN").innerText = "(-- N)";
+        document.getElementById("dispApBrakeBw").innerText = "-- %BW";
+        document.getElementById("dispApBrakeN").innerText = "(-- N)";
+        document.getElementById("dispMaxTrunkFlex").innerText = "-- °";
+        document.getElementById("dispMaxHipFlex").innerText = "-- °";
+        document.getElementById("dispKneeRom").innerText = "-- °";
+        document.getElementById("dispApComExcursion").innerText = "-- cm";
+        return;
+      }
+
+      document.getElementById("dispSeatOffApDist").innerText = (trial.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1);
+      document.getElementById("dispPeakPitchVel").innerText = (trial.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(1);
+
+      document.getElementById("dispApPropBw").innerText = `${(trial.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispApPropN").innerText = `(${(trial.peakApGrfPropulsionNewton ?? 0).toFixed(0)} N)`;
+
+      document.getElementById("dispApBrakeBw").innerText = `${(trial.peakApGrfBrakingPercentBw ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispApBrakeN").innerText = `(${(trial.peakApGrfBrakingNewton ?? 0).toFixed(0)} N)`;
+
+      document.getElementById("dispMaxTrunkFlex").innerText = `${(trial.maxTrunkFlexionDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispMaxHipFlex").innerText = `${(trial.maxHipFlexionDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispKneeRom").innerText = `${(trial.kneeRomDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispApComExcursion").innerText = `${(trial.totalApComExcursionCm ?? 0).toFixed(1)} cm`;
+    }
+
+    // Trial Tabs & Timing Displays
+    function renderTrialTabs() {
+      trialTabsList.innerHTML = "";
+      if (!analysisResult || analysisResult.trials.length === 0) {
+        trialTabsList.innerHTML = '<span class="text-xs text-slate-400">解析試行なし</span>';
+        activeTrialLabel.innerText = "なし";
+        clearTimingDisplays();
+        return;
+      }
+
+      if (selectedTrialIdx >= analysisResult.trials.length) {
+        selectedTrialIdx = 0;
+      }
+
+      analysisResult.trials.forEach((t, idx) => {
+        const btn = document.createElement("button");
+        btn.innerText = `${t.repIndex}回目`;
+        btn.className = idx === selectedTrialIdx
+          ? "px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-600 text-white whitespace-nowrap shadow-xs"
+          : "px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap";
+        btn.onclick = () => {
+          selectedTrialIdx = idx;
+          renderTrialTabs();
+          loadActiveTrialTimings();
+        };
+        trialTabsList.appendChild(btn);
+      });
+
+      activeTrialLabel.innerText = `${analysisResult.trials[selectedTrialIdx].repIndex}回目を編集中`;
+      loadActiveTrialTimings();
+    }
+
+    function loadActiveTrialTimings() {
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+      const trial = analysisResult.trials[selectedTrialIdx];
+      dispStartTime.innerText = (trial.startTimeMs / 1000.0).toFixed(2) + "s";
+      dispSeatTime.innerText = (trial.seatOffTimeMs / 1000.0).toFixed(2) + "s";
+      dispEndTime.innerText = (trial.standEndTimeMs / 1000.0).toFixed(2) + "s";
+      dispStableTime.innerText = (trial.stableTimeMs / 1000.0).toFixed(2) + "s";
+      updateSagittal3dCard(trial);
+    }
+
+    function clearTimingDisplays() {
+      dispStartTime.innerText = "-- s";
+      dispSeatTime.innerText = "-- s";
+      dispEndTime.innerText = "-- s";
+      dispStableTime.innerText = "-- s";
+      updateSagittal3dCard(null);
+    }
+
+    // Jumping to Specific Timings in Video
+    jumpStartBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].startTimeMs);
+      }
+    };
+    jumpSeatBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].seatOffTimeMs);
+      }
+    };
+    jumpEndBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].standEndTimeMs);
+      }
+    };
+    jumpStableBtn.onclick = () => {
+      if (analysisResult?.trials[selectedTrialIdx]) {
+        seekToMs(analysisResult.trials[selectedTrialIdx].stableTimeMs);
+      }
+    };
+
+    function seekToMs(ms) {
+      const dur = video.duration || 1;
+      video.currentTime = Math.max(0, Math.min(dur, ms / 1000.0));
+      drawCurrentOverlay();
+    }
+
+    // Setting Current Frame Time to Events
+    function updateActiveTrialEvent(which) {
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const trial = analysisResult.trials[selectedTrialIdx];
+      const is30s = analysisResult.mode.id === "THIRTY_SECONDS";
+
+      let newStart = trial.startTimeMs;
+      let newSeat = trial.seatOffTimeMs;
+      let newEnd = trial.standEndTimeMs;
+      let newStable = trial.stableTimeMs;
+
+      if (which === "start") newStart = currentMs;
+      if (which === "seat") newSeat = currentMs;
+      if (which === "end") {
+        newEnd = currentMs;
+        if (is30s) newStable = currentMs;
+      }
+      if (which === "stable") newStable = currentMs;
+
+      const updated = StsMetricCalculator.recalculateTrialFromTimestamps({
+        repIndex: trial.repIndex,
+        frames: analysisResult.frames,
+        startTimeMs: newStart,
+        seatOffTimeMs: newSeat,
+        standEndTimeMs: newEnd,
+        stableTimeMs: newStable
+      });
+
+      analysisResult.trials[selectedTrialIdx] = updated;
+
+      // 30s-STS の場合は30秒ウィンドウ制限を再評価
+      if (is30s && analysisResult.trials.length > 0) {
+        const t0 = analysisResult.trials[0].startTimeMs;
+        analysisResult.trials = analysisResult.trials.filter(t => t.standEndTimeMs <= t0 + 30000);
+      }
+
+      // overallTotalDurationSec を最新の試行データから再計算
+      if (analysisResult.trials.length > 0) {
+        if (analysisResult.mode.id === "SINGLE") {
+          analysisResult.overallTotalDurationSec = analysisResult.trials[0].totalDurationSec;
+        } else if (analysisResult.mode.id === "FIVE_TIMES") {
+          const lastTrial = analysisResult.trials[Math.min(analysisResult.trials.length - 1, 4)];
+          analysisResult.overallTotalDurationSec = Math.max(0, (lastTrial.stableTimeMs - analysisResult.trials[0].startTimeMs) / 1000.0);
+        } else if (analysisResult.mode.id === "THIRTY_SECONDS") {
+          const t0 = analysisResult.trials[0].startTimeMs;
+          const lastTime = analysisResult.trials[analysisResult.trials.length - 1].standEndTimeMs;
+          analysisResult.overallTotalDurationSec = Math.min(30.0, Math.max(0, (lastTime - t0) / 1000.0));
+        }
+      }
+
+      loadActiveTrialTimings();
+      renderReport();
+      renderCharts();
+      drawCurrentOverlay();
+    }
+
+    setStartBtn.onclick = () => updateActiveTrialEvent("start");
+    setSeatBtn.onclick = () => updateActiveTrialEvent("seat");
+    setEndBtn.onclick = () => updateActiveTrialEvent("end");
+    setStableBtn.onclick = () => updateActiveTrialEvent("stable");
+
+    // Failed Attempts Management
+    addFailAtCurrentBtn.onclick = () => {
+      if (!analysisResult) return;
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const fail = new FailedAttempt(currentMs, "離臀失敗");
+      analysisResult.failedAttempts.push(fail);
+      analysisResult.failedAttempts.sort((a, b) => a.timestampMs - b.timestampMs);
+      renderFailedAttemptsList();
+      renderReport();
+      drawCurrentOverlay();
+    };
+
+    function renderFailedAttemptsList() {
+      failedAttemptsContainer.innerHTML = "";
+      if (!analysisResult || analysisResult.failedAttempts.length === 0) {
+        failedAttemptsContainer.innerHTML = '<span class="text-slate-400 text-xs">記録された離臀失敗はありません</span>';
+        return;
+      }
+
+      analysisResult.failedAttempts.forEach((fail, idx) => {
+        const tag = document.createElement("div");
+        tag.className = "inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-rose-300 rounded-lg text-xs text-rose-800 shadow-2xs";
+
+        const textSpan = document.createElement("span");
+        textSpan.className = "cursor-pointer font-mono font-bold hover:underline";
+        textSpan.innerText = `離臀失敗 ${(fail.timestampMs / 1000.0).toFixed(2)}s`;
+        textSpan.title = "この瞬間へジャンプ";
+        textSpan.onclick = () => seekToMs(fail.timestampMs);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.innerHTML = "&times;";
+        deleteBtn.className = "w-4 h-4 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-700 flex items-center justify-center font-bold text-xs";
+        deleteBtn.title = "削除";
+        deleteBtn.onclick = () => {
+          analysisResult.failedAttempts.splice(idx, 1);
+          renderFailedAttemptsList();
+          renderReport();
+          drawCurrentOverlay();
+        };
+
+        tag.appendChild(textSpan);
+        tag.appendChild(deleteBtn);
+        failedAttemptsContainer.appendChild(tag);
+      });
+    }
+
+    // Step Prev / Next Buttons (0.04s)
+    stepPrevBtn.onclick = () => {
+      video.currentTime = Math.max(0, video.currentTime - 0.04);
+      drawCurrentOverlay();
+    };
+    stepNextBtn.onclick = () => {
+      const dur = video.duration || 1;
+      video.currentTime = Math.min(dur, video.currentTime + 0.04);
+      drawCurrentOverlay();
+    };
+
+    // Render Summary Report
+    function renderReport() {
+      if (!analysisResult) return;
+      const res = analysisResult;
+      const is30s = res.mode.id === "THIRTY_SECONDS";
+
+      let totalSec = res.overallTotalDurationSec;
+      if (totalSec == null && res.trials.length > 0) {
+        if (res.mode.id === "SINGLE") {
+          totalSec = res.trials[0].totalDurationSec;
+        } else if (res.mode.id === "FIVE_TIMES") {
+          const lastTrial = res.trials[Math.min(res.trials.length - 1, 4)];
+          totalSec = Math.max(0, (lastTrial.stableTimeMs - res.trials[0].startTimeMs) / 1000.0);
+        } else if (res.mode.id === "THIRTY_SECONDS") {
+          const t0 = res.trials[0].startTimeMs;
+          const lastTime = res.trials[res.trials.length - 1].standEndTimeMs;
+          totalSec = Math.min(30.0, Math.max(0, (lastTime - t0) / 1000.0));
+        }
+      }
+
+      document.getElementById("totalDurationLabel").innerText = is30s ? "30秒内経過時間" : "トータル所要時間";
+      document.getElementById("totalDurationVal").innerText = totalSec != null
+        ? `${totalSec.toFixed(2)} s`
+        : "-- s";
+
+      document.getElementById("repsCountLabel").innerText = is30s ? "30秒内完了回数" : "完了試行数";
+      document.getElementById("repsCountVal").innerText = `${is30s ? res.thirtySecCompletedCount : res.trials.length} 回`;
+
+      const totalAttempts = res.trials.length + res.failedAttempts.length;
+      document.getElementById("statTotalAttempts").innerText = `${totalAttempts} 回`;
+      const sRate = totalAttempts > 0 ? (res.trials.length / totalAttempts * 100).toFixed(0) : 0;
+      document.getElementById("statSuccessCount").innerText = `${res.trials.length} (${sRate}%)`;
+      const fRate = totalAttempts > 0 ? (res.failedAttempts.length / totalAttempts * 100).toFixed(0) : 0;
+      document.getElementById("statFailCount").innerText = `${res.failedAttempts.length} (${fRate}%)`;
+    }
+
+    // Render Charts (Chart.js)
+    function renderCharts() {
+      if (!analysisResult || analysisResult.trials.length === 0) return;
+      const trials = analysisResult.trials;
+      const labels = trials.map(t => `${t.repIndex}回`);
+      const t0 = trials[0].startTimeMs;
+
+      // 1. Cumulative Time Chart
+      const cumTimes = trials.map(t => ((t.standEndTimeMs - t0) / 1000.0).toFixed(2));
+      const singleTimes = trials.map(t => t.totalDurationSec.toFixed(2));
+
+      if (cumTimeChart) cumTimeChart.destroy();
+      const ctxCum = document.getElementById("cumTimeChart").getContext("2d");
+      cumTimeChart = new Chart(ctxCum, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "line",
+              label: "累積時間 (s)",
+              data: cumTimes,
+              borderColor: "#0284c7",
+              backgroundColor: "#0284c7",
+              tension: 0.2,
+              yAxisID: "y"
+            },
+            {
+              type: "bar",
+              label: "各回時間 (s)",
+              data: singleTimes,
+              backgroundColor: "rgba(14, 165, 233, 0.45)",
+              borderColor: "#0ea5e9",
+              borderWidth: 1,
+              yAxisID: "y"
+            }
+          ]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: "#f1f5f9" } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // 2. Lateral Bias Chart
+      const meanBiases = trials.map(t => (t.meanLeftBiasPercent - 50.0).toFixed(1));
+      const seatBiases = trials.map(t => (t.biasAtSeatOff.leftPercent - 50.0).toFixed(1));
+
+      if (biasChart) biasChart.destroy();
+      const ctxBias = document.getElementById("biasChart").getContext("2d");
+      biasChart = new Chart(ctxBias, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "bar",
+              label: "正中乖離 (青:左 / 橙:右)",
+              data: meanBiases,
+              backgroundColor: meanBiases.map(v => v >= 0 ? "rgba(59, 130, 246, 0.6)" : "rgba(249, 115, 22, 0.6)"),
+              borderColor: meanBiases.map(v => v >= 0 ? "#2563eb" : "#ea580c"),
+              borderWidth: 1
+            },
+            {
+              type: "line",
+              label: "離臀時偏倚 (◆)",
+              data: seatBiases,
+              borderColor: "#8b5cf6",
+              backgroundColor: "#8b5cf6",
+              pointStyle: "rectRot",
+              pointRadius: 6,
+              showLine: false
+            }
+          ]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+          scales: {
+            y: {
+              grid: { color: "#f1f5f9" },
+              ticks: { callback: v => (v > 0 ? `L +${v}%` : v < 0 ? `R ${v}%` : "0 (正中)") }
+            },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // 3. Knee-Hip Angle-Angle Diagram (Cyclogram)
+      renderAngleAngleChart('ALL');
+    }
+
+    // Knee-Hip Angle-Angle Diagram (Cyclogram: Knee Flexion vs Hip Flexion)
+    function renderAngleAngleChart(targetRep = currentAngleRep) {
+      if (!analysisResult || !analysisResult.trials || analysisResult.trials.length === 0) return;
+      currentAngleRep = targetRep;
+
+      const trials = analysisResult.trials;
+      const frames = analysisResult.frames || [];
+      if (frames.length === 0) return;
+
+      // Update Tabs UI
+      const tabsContainer = document.getElementById("angleDiagramTabs");
+      if (tabsContainer) {
+        let tabsHtml = `<button data-rep="ALL" class="angle-tab-btn px-2.5 py-1 rounded-lg ${currentAngleRep === 'ALL' ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'} transition">全体重ね合わせ</button>`;
+        trials.forEach(t => {
+          const isSel = String(currentAngleRep) === String(t.repIndex);
+          tabsHtml += `<button data-rep="${t.repIndex}" class="angle-tab-btn px-2 py-1 rounded-lg ${isSel ? 'bg-white font-bold text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'} transition">${t.repIndex}回</button>`;
+        });
+        tabsContainer.innerHTML = tabsHtml;
+
+        tabsContainer.querySelectorAll(".angle-tab-btn").forEach(btn => {
+          btn.onclick = () => {
+            const rep = btn.getAttribute("data-rep");
+            renderAngleAngleChart(rep);
+          };
+        });
+      }
+
+      // Filter Trials to plot
+      const targetTrials = currentAngleRep === 'ALL'
+        ? trials
+        : trials.filter(t => String(t.repIndex) === String(currentAngleRep));
+
+      const repColors = [
+        { border: "#0284c7", bg: "rgba(2, 132, 199, 0.15)" },   // Sky Blue (Rep 1)
+        { border: "#10b981", bg: "rgba(16, 185, 129, 0.15)" },  // Emerald (Rep 2)
+        { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.15)" },  // Purple (Rep 3)
+        { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" },  // Amber (Rep 4)
+        { border: "#ec4899", bg: "rgba(236, 72, 153, 0.15)" },  // Pink (Rep 5)
+        { border: "#06b6d4", bg: "rgba(6, 182, 212, 0.15)" },   // Cyan (Rep 6)
+        { border: "#f97316", bg: "rgba(249, 115, 22, 0.15)" },  // Orange (Rep 7)
+        { border: "#6366f1", bg: "rgba(99, 102, 241, 0.15)" }   // Indigo (Rep 8)
+      ];
+
+      const datasets = [];
+      let maxX = 90;
+      let maxY = 90;
+
+      targetTrials.forEach((trial) => {
+        const cIndex = (trial.repIndex - 1) % repColors.length;
+        const color = repColors[cIndex];
+
+        // 起立区間のフレーム抽出 (startTimeMs 〜 standEndTimeMs または stableTimeMs)
+        const tStart = trial.startTimeMs;
+        const tEnd = trial.standEndTimeMs || trial.stableTimeMs;
+        const tSeatOff = trial.seatOffTimeMs;
+
+        const trialFrames = frames.filter(f => f.timestampMs >= tStart && f.timestampMs <= tEnd);
+        if (trialFrames.length < 2) return;
+
+        // 離臀タイミングに最も近いフレームを検出
+        let seatOffIdx = 0;
+        let minDiff = Infinity;
+        trialFrames.forEach((f, idx) => {
+          const diff = Math.abs(f.timestampMs - tSeatOff);
+          if (diff < minDiff) {
+            minDiff = diff;
+            seatOffIdx = idx;
+          }
+        });
+
+        const dataPoints = trialFrames.map(f => {
+          const kx = Math.max(0, Math.round((f.kneeAngleDeg || 0) * 10) / 10);
+          const hy = Math.max(0, Math.round((f.hipAngleDeg || 0) * 10) / 10);
+          if (kx > maxX) maxX = kx;
+          if (hy > maxY) maxY = hy;
+          return { x: kx, y: hy };
+        });
+
+        // 折れ線データセット
+        datasets.push({
+          type: "scatter",
+          label: `${trial.repIndex}回目`,
+          data: dataPoints,
+          showLine: true,
+          borderColor: color.border,
+          backgroundColor: color.border,
+          borderWidth: currentAngleRep === 'ALL' ? 2 : 2.5,
+          tension: 0.15,
+          pointRadius: (ctx) => {
+            const i = ctx.dataIndex;
+            if (i === 0) return 6; // 開始点（○）
+            if (i === seatOffIdx) return 7; // 離臀点（◆）
+            if (i === dataPoints.length - 1) return 6; // 起立完了点（■）
+            return currentAngleRep === 'ALL' ? 0 : 1.5;
+          },
+          pointStyle: (ctx) => {
+            const i = ctx.dataIndex;
+            if (i === 0) return 'circle';
+            if (i === seatOffIdx) return 'rectRot'; // ダイヤ（離臀）
+            if (i === dataPoints.length - 1) return 'rect'; // 四角（起立完了）
+            return 'circle';
+          },
+          pointHoverRadius: 8
+        });
+      });
+
+      if (angleAngleChart) angleAngleChart.destroy();
+      const canvasEl = document.getElementById("angleAngleChart");
+      if (!canvasEl) return;
+      const ctx = canvasEl.getContext("2d");
+
+      angleAngleChart = new Chart(ctx, {
+        type: "scatter",
+        data: { datasets },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: "top",
+              labels: { boxWidth: 12, font: { size: 10 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.dataset.label || "";
+                  const p = ctx.raw;
+                  const idx = ctx.dataIndex;
+                  let eventTag = "";
+                  if (idx === 0) eventTag = " [開始]";
+                  else if (idx === ctx.dataset.data.length - 1) eventTag = " [起立完了]";
+                  return `${label}${eventTag}: 膝屈曲 ${p.x}°, 股屈曲 ${p.y}°`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: "linear",
+              title: {
+                display: true,
+                text: "膝関節 屈曲角度 (°) [←伸展 0° ... 屈曲→]",
+                font: { size: 11, weight: "bold" },
+                color: "#334155"
+              },
+              min: 0,
+              max: Math.ceil((maxX + 10) / 10) * 10,
+              grid: { color: "#f1f5f9" }
+            },
+            y: {
+              type: "linear",
+              title: {
+                display: true,
+                text: "股関節 屈曲角度 (°) [↓伸展 0° ... 屈曲↑]",
+                font: { size: 11, weight: "bold" },
+                color: "#334155"
+              },
+              min: 0,
+              max: Math.ceil((maxY + 10) / 10) * 10,
+              grid: { color: "#f1f5f9" }
+            }
+          }
+        }
+      });
+    }
+
+    // Smooth 60fps Playback Render Loop with requestAnimationFrame
+    let animFrameId = null;
+    function renderLoop() {
+      if (!video.paused && !video.ended) {
+        const cur = video.currentTime;
+        const dur = video.duration || 1;
+        seekBar.value = Math.round((cur / dur) * 1000);
+        timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
+        drawCurrentOverlay();
+        animFrameId = requestAnimationFrame(renderLoop);
+      }
+    }
+
+    // Video Playback & Overlay Drawing
+    playPauseBtn.onclick = () => {
+      if (video.paused) {
+        video.play();
+        playIcon.classList.add("hidden");
+        pauseIcon.classList.remove("hidden");
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+        animFrameId = requestAnimationFrame(renderLoop);
+      } else {
+        video.pause();
+        playIcon.classList.remove("hidden");
+        pauseIcon.classList.add("hidden");
+        if (animFrameId) cancelAnimationFrame(animFrameId);
+      }
+    };
+
+    video.onplay = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      animFrameId = requestAnimationFrame(renderLoop);
+    };
+
+    video.onpause = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+    };
+
+    video.onended = () => {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      playIcon.classList.remove("hidden");
+      pauseIcon.classList.add("hidden");
+    };
+
+    video.ontimeupdate = () => {
+      if (video.paused) {
+        const cur = video.currentTime;
+        const dur = video.duration || 1;
+        seekBar.value = Math.round((cur / dur) * 1000);
+        timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
+        drawCurrentOverlay();
+      }
+    };
+
+    seekBar.oninput = () => {
+      const dur = video.duration || 1;
+      video.currentTime = (seekBar.value / 1000.0) * dur;
+      drawCurrentOverlay();
+    };
+
+    // Helper to get smoothly interpolated frame at currentMs for 2D overlay
+    function getInterpolated2DFrame(frames, currentMs) {
+      if (!frames || frames.length === 0) return null;
+      if (frames.length === 1 || currentMs <= frames[0].timestampMs) return frames[0];
+      const last = frames[frames.length - 1];
+      if (currentMs >= last.timestampMs) return last;
+
+      let i = 0;
+      while (i < frames.length - 1 && frames[i + 1].timestampMs <= currentMs) {
+        i++;
+      }
+      const f0 = frames[i];
+      const f1 = frames[i + 1];
+      const dt = f1.timestampMs - f0.timestampMs;
+      const alpha = dt > 0 ? Math.max(0, Math.min(1, (currentMs - f0.timestampMs) / dt)) : 0;
+
+      const interpLm = {};
+      if (f0.landmarks && f1.landmarks) {
+        for (const k in f0.landmarks) {
+          const p0 = f0.landmarks[k];
+          const p1 = f1.landmarks[k];
+          if (p0 && p1) {
+            interpLm[k] = {
+              x: p0.x + (p1.x - p0.x) * alpha,
+              y: p0.y + (p1.y - p0.y) * alpha
+            };
+          } else {
+            interpLm[k] = p0 || p1;
+          }
+        }
+      }
+
+      return {
+        ...f0,
+        timestampMs: currentMs,
+        landmarks: interpLm,
+        comX: f0.comX + (f1.comX - f0.comX) * alpha,
+        comY: f0.comY + (f1.comY - f0.comY) * alpha,
+        midBaseX: f0.midBaseX + (f1.midBaseX - f0.midBaseX) * alpha,
+        leftBiasPercent: f0.leftBiasPercent + (f1.leftBiasPercent - f0.leftBiasPercent) * alpha,
+        grf: f0.grf
+      };
+    }
+
+    // Draw Skeleton, CoM, and BoS on Overlay Canvas & Update 3D Viewport
+    function drawCurrentOverlay() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!analysisResult || analysisResult.frames.length === 0) return;
+
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const frame = getInterpolated2DFrame(analysisResult.frames, currentMs) ||
+                    StsMetricCalculator.nearestFrame(analysisResult.frames, currentMs);
+      if (!frame) return;
+
+      // Update 3D Mesh & Skeleton Model in Three.js Scene with Sub-frame Interpolation (Lerp)
+      if (sts3dViewer && currentViewMode !== "2d") {
+        try {
+          sts3dViewer.updateAtTimestamp(currentMs);
+        } catch (e) {
+          console.warn("Failed to update 3D frame:", e);
+        }
+      }
+
+      // Update Phase Badge and Live Numbers
+      const activePhase = StsCsvExporter.resolveActivePhase(
+        currentMs,
+        analysisResult.trials,
+        analysisResult.failedAttempts,
+        analysisResult.mode.id === "THIRTY_SECONDS"
+      );
+      document.getElementById("currentPhaseBadge").innerText = `${activePhase.rep}: ${activePhase.phase}`;
+      const biasSide = frame.leftBiasPercent > 50.5 ? "左寄り" : frame.leftBiasPercent < 49.5 ? "右寄り" : "正中";
+      document.getElementById("currentBiasText").innerText = `${frame.leftBiasPercent.toFixed(1)}% (${biasSide})`;
+
+      // 「床反力は、離臀以降のみ表示として。各回の、離臀から完了までの間のピーク値を表示。」
+      const isPastSeatOff = analysisResult.trials.some(t => {
+        const endLimit = analysisResult.mode.id === "THIRTY_SECONDS" ? t.standEndTimeMs + 1000 : t.stableTimeMs + 500;
+        return currentMs >= t.seatOffTimeMs && currentMs <= endLimit;
+      });
+
+      if (isPastSeatOff && frame.grf) {
+        document.getElementById("currentGrfText").innerText = `${frame.grf.verticalPercentBw.toFixed(0)}%BW (${frame.grf.verticalNewton.toFixed(0)}N)`;
+        document.getElementById("currentGrfText").className = "font-bold text-blue-700";
+      } else {
+        document.getElementById("currentGrfText").innerText = "-- (離臀前/待機)";
+        document.getElementById("currentGrfText").className = "font-bold text-slate-400";
+      }
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      const showVideo = overlayVideoToggle ? overlayVideoToggle.checked : false;
+
+      // Draw Floor Baseline & Foot Base Reference when video is hidden (clean motion-capture style)
+      if (!showVideo && frame.landmarks && (frame.landmarks[27] || frame.landmarks[28])) {
+        const ankleY = Math.max(
+          frame.landmarks[27] ? frame.landmarks[27].y : 0.88,
+          frame.landmarks[28] ? frame.landmarks[28].y : 0.88
+        ) * h;
+        ctx.save();
+        ctx.strokeStyle = "rgba(100, 116, 139, 0.45)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, ankleY);
+        ctx.lineTo(w, ankleY);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(148, 163, 184, 0.7)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText("床面 (支持基底面基準)", 14, ankleY - 6);
+        ctx.restore();
+      }
+
+      // Draw Skeleton Lines
+      const connections = [
+        [11, 12], [11, 23], [12, 24], [23, 24],
+        [23, 25], [24, 26], [25, 27], [26, 28],
+        [27, 29], [28, 30], [29, 31], [30, 32]
+      ];
+      ctx.strokeStyle = "rgba(59, 130, 246, 0.8)";
+      ctx.lineWidth = 4;
+      for (const [p1, p2] of connections) {
+        const lm1 = frame.landmarks[p1];
+        const lm2 = frame.landmarks[p2];
+        if (lm1 && lm2) {
+          ctx.beginPath();
+          ctx.moveTo(lm1.x * w, lm1.y * h);
+          ctx.lineTo(lm2.x * w, lm2.y * h);
+          ctx.stroke();
+        }
+      }
+
+      // Draw Key Landmarks
+      for (const idx in frame.landmarks) {
+        const lm = frame.landmarks[idx];
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(lm.x * w, lm.y * h, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // --- Draw 2D Center of Mass (CoM) Full Trajectory & Progress Trail ---
+      const frames = analysisResult.frames;
+      if (frames && frames.length > 1) {
+        // 1. Overall CoM Trajectory Path (Light dashed trail across the whole trial)
+        ctx.save();
+        ctx.strokeStyle = "rgba(234, 179, 8, 0.4)";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (let i = 0; i < frames.length; i++) {
+          const fx = frames[i].comX * w;
+          const fy = frames[i].comY * h;
+          if (i === 0) ctx.moveTo(fx, fy);
+          else ctx.lineTo(fx, fy);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Active CoM Trajectory Trail up to the current timestamp
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = "rgba(245, 158, 11, 0.8)";
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        let started = false;
+        for (let i = 0; i < frames.length; i++) {
+          if (frames[i].timestampMs > currentMs) break;
+          const fx = frames[i].comX * w;
+          const fy = frames[i].comY * h;
+          if (!started) {
+            ctx.moveTo(fx, fy);
+            started = true;
+          } else {
+            ctx.lineTo(fx, fy);
+          }
+        }
+        if (started) ctx.stroke();
+        ctx.restore();
+
+        // 3. Key Milestone CoM Markers (Seat-off & Stand-end for active trial)
+        const currentTrial = analysisResult.trials[selectedTrialIdx] || analysisResult.trials[0];
+        if (currentTrial) {
+          const fSeat = StsMetricCalculator.nearestFrame(frames, currentTrial.seatOffTimeMs);
+          if (fSeat) {
+            ctx.fillStyle = "#fb923c"; // Orange for Seat-off
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(fSeat.comX * w, fSeat.comY * h, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+          const fEnd = StsMetricCalculator.nearestFrame(frames, currentTrial.standEndTimeMs);
+          if (fEnd) {
+            ctx.fillStyle = "#22c55e"; // Green for Stand-end
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(fEnd.comX * w, fEnd.comY * h, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Draw Center of Mass (CoM: 🟡 Current Frame Indicator)
+      ctx.fillStyle = "#eab308";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(frame.comX * w, frame.comY * h, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw Base of Support (BoS: 🟢)
+      ctx.fillStyle = "#22c55e";
+      ctx.beginPath();
+      ctx.arc(frame.midBaseX * w, frame.comY * h, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ==========================================
+    // A4 Report Generation & Print Implementation
+    // ==========================================
+    function updateOrientationUI() {
+      const dynamicStyle = document.getElementById("dynamicPageOrientationStyle");
+      if (currentReportOrientation === "landscape") {
+        if (dynamicStyle) {
+          dynamicStyle.textContent = `@media print { @page { size: A4 landscape; margin: 8mm 12mm 8mm 12mm; } }`;
+        }
+        orientLandscapeBtn.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm flex items-center gap-1 transition font-bold";
+        orientPortraitBtn.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 flex items-center gap-1 transition";
+        a4PrintContainer.className = "bg-white w-full max-w-[1040px] p-6 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-3";
+      } else {
+        if (dynamicStyle) {
+          dynamicStyle.textContent = `@media print { @page { size: A4 portrait; margin: 6mm 10mm 6mm 10mm; } }`;
+        }
+        orientPortraitBtn.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm flex items-center gap-1 transition font-bold";
+        orientLandscapeBtn.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 flex items-center gap-1 transition";
+        a4PrintContainer.className = "bg-white w-full max-w-[760px] p-4 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-2 is-portrait";
+      }
+    }
+
+    orientLandscapeBtn.onclick = () => {
+      currentReportOrientation = "landscape";
+      updateOrientationUI();
+      if (analysisResult) generateA4Report();
+    };
+
+    orientPortraitBtn.onclick = () => {
+      currentReportOrientation = "portrait";
+      updateOrientationUI();
+      if (analysisResult) generateA4Report();
+    };
+
+    openReportBtn.onclick = () => {
+      if (!analysisResult) return;
+      updateOrientationUI();
+      generateA4Report();
+      reportPreviewModal.classList.remove("hidden");
+    };
+
+    closeReportModalBtn.onclick = () => {
+      reportPreviewModal.classList.add("hidden");
+    };
+
+    triggerPrintBtn.onclick = () => {
+      if (!analysisResult) return;
+      updateOrientationUI();
+      generateA4Report();
+      setTimeout(() => {
+        window.print();
+      }, 150);
+    };
+
+    function generateA4Report() {
+      const res = analysisResult;
+      const is30s = res.mode.id === "THIRTY_SECONDS";
+      const trials = res.trials;
+      const fails = res.failedAttempts;
+      const targetTrial = trials[selectedTrialIdx] || trials[0];
+
+      const nowStr = new Date().toLocaleString("ja-JP", {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit"
+      });
+
+      const totalAttempts = trials.length + fails.length;
+      const sRate = totalAttempts > 0 ? ((trials.length / totalAttempts) * 100).toFixed(0) : 0;
+      const fRate = totalAttempts > 0 ? ((fails.length / totalAttempts) * 100).toFixed(0) : 0;
+
+      // Ensure Angle-Angle Diagram is rendered in Overlay mode synchronously for report
+      const prevRep = currentAngleRep;
+      if (!angleAngleChart || currentAngleRep !== 'ALL') {
+        renderAngleAngleChart('ALL');
+      }
+
+      // Extract Chart Images as Base64 (Crisp and reliable on print)
+      const cumChartImg = cumTimeChart ? cumTimeChart.toBase64Image() : "";
+      const biasChartImg = biasChart ? biasChart.toBase64Image() : "";
+      let angleChartImg = "";
+      if (angleAngleChart) {
+        try {
+          angleChartImg = angleAngleChart.toBase64Image();
+        } catch (e) {
+          console.warn("Angle chart export error:", e);
+        }
+      }
+
+      if (prevRep !== 'ALL') {
+        renderAngleAngleChart(prevRep);
+      }
+
+      // トータル所要時間のフォールバック計算
+      let totalSec = res.overallTotalDurationSec;
+      if (totalSec == null && trials.length > 0) {
+        if (res.mode.id === "SINGLE") {
+          totalSec = trials[0].totalDurationSec;
+        } else if (res.mode.id === "FIVE_TIMES") {
+          const lastTrial = trials[Math.min(trials.length - 1, 4)];
+          totalSec = Math.max(0, (lastTrial.stableTimeMs - trials[0].startTimeMs) / 1000.0);
+        } else if (res.mode.id === "THIRTY_SECONDS") {
+          const t0 = trials[0].startTimeMs;
+          const lastTime = trials[trials.length - 1].standEndTimeMs;
+          totalSec = Math.min(30.0, Math.max(0, (lastTime - t0) / 1000.0));
+        }
+      }
+
+      if (currentReportOrientation === "landscape") {
+        // Build Table Rows for Landscape
+        const tableRowsHtml = trials.map(t => `
+          <tr class="border-b border-slate-100 hover:bg-slate-50/50 text-center text-[10px]">
+            <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px]">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px] text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px] text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW</td>
+            <td class="py-0.5 px-0.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+            <td class="py-0.5 px-0.5 font-bold text-indigo-700 font-mono">${(t.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1)}cm</td>
+            <td class="py-0.5 px-0.5 font-bold text-amber-700 font-mono">${(t.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(0)}°/s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9px] text-slate-700">${(t.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)}% / ${(t.peakApGrfBrakingPercentBw ?? 0).toFixed(0)}%</td>
+          </tr>
+        `).join("");
+
+        // ==========================================
+        // LANDSCAPE (A4横長) Optimized Balanced Layout
+        // ==========================================
+        a4PrintContainer.innerHTML = `
+          <!-- Report Header -->
+          <div class="border-b-2 border-slate-800 pb-1 flex justify-between items-end">
+            <div>
+              <h1 class="text-base font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート (STS Analysis Report)</h1>
+              <p class="text-[10px] text-slate-500 font-medium">Sit-to-Stand Biomechanical Motion & 3D Sagittal Kinematics Report 【A4横長】</p>
+            </div>
+            <div class="text-right text-[10px] text-slate-600 leading-tight">
+              <div><strong>解析日時:</strong> ${nowStr}</div>
+              <div><strong>システム:</strong> ${(rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)'}</div>
+            </div>
+          </div>
+
+          <!-- Meta Row: Subject & Protocol Information + Overall Key Metrics -->
+          <div class="grid grid-cols-12 gap-2 text-xs">
+            <!-- Subject Info (4 cols) -->
+            <div class="col-span-4 bg-slate-50 border border-slate-200 rounded-lg p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10.5px]">
+              <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
+              <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(反転補正)" : "正面(正像)"}</strong></div>
+              <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
+              <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
+            </div>
+            <!-- Overall Summary Metrics (8 cols - 5 cards) -->
+            <div class="col-span-8 grid grid-cols-5 gap-1.5 text-center">
+              <div class="p-1.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[9.5px] text-slate-500">${is30s ? "30秒内回数" : "トータル所要時間"}</div>
+                <div class="text-xs font-extrabold text-slate-900 mt-0.5">
+                  ${is30s ? res.thirtySecCompletedCount + " <span class='text-[10px] font-normal'>回</span>" : (totalSec != null ? totalSec.toFixed(2) + " <span class='text-[10px] font-normal'>s</span>" : "--")}
+                </div>
+              </div>
+              <div class="p-1.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[9.5px] text-slate-500">試行成績</div>
+                <div class="text-xs font-extrabold text-slate-800 mt-0.5">${trials.length} / ${totalAttempts} <span class="text-[9px] text-slate-500 font-normal">(${sRate}%)</span></div>
+              </div>
+              <div class="p-1.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 flex flex-col justify-center">
+                <div class="text-[9.5px] text-rose-600 font-medium">離臀失敗数 / 確率</div>
+                <div class="text-xs font-extrabold mt-0.5">${fails.length} <span class="text-[10px] font-normal">回</span> <span class="text-[9px] font-normal">(${fRate}%)</span></div>
+              </div>
+              <div class="p-1.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex flex-col justify-center">
+                <div class="text-[9.5px] text-blue-600 font-medium">離臀〜完了 最大床反力</div>
+                <div class="text-xs font-extrabold mt-0.5">
+                  ${trials.length > 0 ? Math.max(...trials.map(t => t.peakVerticalBwPercent)).toFixed(0) + " <span class='text-[10px] font-normal'>%BW</span>" : "--"}
+                </div>
+              </div>
+              <div class="p-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-900 flex flex-col justify-center">
+                <div class="text-[9.5px] text-indigo-600 font-medium">離臀時 CoM-足首距離</div>
+                <div class="text-xs font-extrabold mt-0.5">
+                  ${targetTrial ? (targetTrial.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1) + " <span class='text-[10px] font-normal'>cm</span>" : "--"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Main Section: Left Column (Visual Biomechanics) & Right Column (Metrics & Clinical Assessment) -->
+          <div class="grid grid-cols-2 gap-3 items-stretch">
+            <!-- Left Column: Stick Picture + Trend Graphs -->
+            <div class="flex flex-col justify-between space-y-2">
+              <!-- Stick Picture -->
+              <div class="space-y-0.5">
+                <div class="flex justify-between items-center text-[10.5px]">
+                  <h2 class="font-bold text-slate-900 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                    動作シークエンス スティックピクチャ (代表試行: ${targetTrial ? targetTrial.repIndex + "回目" : "-"})
+                    ${res.isFrontCameraMirrored ? '<span class="text-[9px] bg-amber-100 text-amber-800 font-medium px-1 py-0.2 rounded">反転補正済</span>' : ''}
+                  </h2>
+                  <span class="text-[9.5px] text-slate-500 font-medium">●黄:CoM / ●緑:支持面 / 破線:床面</span>
+                </div>
+                <div class="bg-slate-950 rounded-lg p-1 flex justify-center shadow-inner">
+                  <canvas id="stickPictureCanvas" width="520" height="120" class="w-full max-h-[120px]"></canvas>
+                </div>
+              </div>
+
+              <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
+                  ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 各回累積 & 立ち上がり時間</div>
+                  ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 重心左右偏倚推移 (正中50%)</div>
+                  ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
+            <div class="flex flex-col justify-between space-y-2">
+              <!-- Repetition Breakdown Table -->
+              <div class="space-y-0.5">
+                <h2 class="text-[10.5px] font-bold text-slate-900 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                  各回生体力学メトリクス一覧 (3D & 矢状面指標を含む)
+                </h2>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                  <table class="w-full text-[9.5px] border-collapse">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-700 border-b border-slate-200 text-[9px] font-bold">
+                        <th class="py-0.5 px-1 text-center">回</th>
+                        <th class="py-0.5 px-0.5 text-center">開始</th>
+                        <th class="py-0.5 px-0.5 text-center">離臀</th>
+                        <th class="py-0.5 px-0.5 text-center">完了</th>
+                        <th class="py-0.5 px-0.5 text-center">時間</th>
+                        <th class="py-0.5 px-0.5 text-center">鉛直GRF</th>
+                        <th class="py-0.5 px-0.5 text-center">左右偏倚</th>
+                        <th class="py-0.5 px-0.5 text-center text-indigo-700">離臀前後距離</th>
+                        <th class="py-0.5 px-0.5 text-center text-amber-700">前傾角速度</th>
+                        <th class="py-0.5 px-0.5 text-center text-slate-700">AP床反力(推/制)</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${tableRowsHtml}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Clinical Observation & Signature Block -->
+              <div class="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70 grid grid-cols-3 gap-2.5 flex-1 flex flex-col justify-between">
+                <div class="col-span-2 flex flex-col justify-between space-y-1.5">
+                  <span class="text-[9.5px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
+                  <div class="space-y-2.5 flex-1 pt-0.5">
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                  </div>
+                </div>
+                <div class="flex flex-col justify-between space-y-1 border-l border-slate-200 pl-2.5">
+                  <span class="text-[9.5px] font-bold text-slate-600">【評価担当者 署名】</span>
+                  <div class="h-16 border-b border-dashed border-slate-300 flex items-end justify-center pb-0.5 text-slate-300 text-[9px]">印・サイン</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // Build Table Rows for Portrait
+        const tableRowsHtml = trials.map(t => `
+          <tr class="border-b border-slate-200 text-center text-[9.5px]">
+            <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
+            <td class="py-0.5 px-0.5 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW</td>
+            <td class="py-0.5 px-0.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+            <td class="py-0.5 px-0.5 font-bold text-indigo-700 font-mono">${(t.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1)}cm</td>
+            <td class="py-0.5 px-0.5 font-bold text-amber-700 font-mono">${(t.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(0)}°/s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9px]">${(t.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)}% / ${(t.peakApGrfBrakingPercentBw ?? 0).toFixed(0)}%</td>
+          </tr>
+        `).join("");
+
+        // ==========================================
+        // PORTRAIT (A4縦長) Layout
+        // ==========================================
+        a4PrintContainer.innerHTML = `
+          <!-- Report Header -->
+          <div class="border-b-2 border-slate-800 pb-1 flex justify-between items-end">
+            <div>
+              <h1 class="text-base font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート</h1>
+              <p class="text-[10px] text-slate-500 font-medium">Sit-to-Stand (STS) Biomechanical Motion Analysis Report 【A4縦長】</p>
+            </div>
+            <div class="text-right text-[10px] text-slate-600 leading-tight">
+              <div><strong>解析日時:</strong> ${nowStr}</div>
+              <div><strong>解析システム:</strong> ${(rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)'}</div>
+            </div>
+          </div>
+
+          <!-- Subject & Protocol Information Bar -->
+          <div class="bg-slate-50 border border-slate-200 rounded-md p-1.5 grid grid-cols-4 gap-1 text-[10px]">
+            <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
+            <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
+            <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
+            <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(反転)" : "正面/背面(正像)"}</strong></div>
+          </div>
+          <div class="grid grid-cols-2 gap-3.5 items-stretch">
+            <!-- Left Column: Stick Picture + Trend Graphs -->
+            <div class="flex flex-col justify-between space-y-2.5">
+              <!-- Stick Picture -->
+              <div class="space-y-1">
+                <div class="flex justify-between items-center text-xs">
+                  <h2 class="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                    動作シークエンス スティックピクチャ (代表試行: ${targetTrial ? targetTrial.repIndex + "回目" : "-"})
+                    ${res.isFrontCameraMirrored ? '<span class="text-[9.5px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.2 rounded">自撮りカメラ反転補正済</span>' : ''}
+                  </h2>
+                  <span class="text-[10px] text-slate-500 font-medium">●黄:身体重心(CoM) / ●緑:支持面 / 破線:床面</span>
+                </div>
+                <div class="bg-slate-950 rounded-lg p-1.5 flex justify-center shadow-inner">
+                  <canvas id="stickPictureCanvas" width="520" height="135" class="w-full max-h-[135px]"></canvas>
+                </div>
+              </div>
+
+              <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
+                  ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 累積&各回時間 (s)</div>
+                  ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 左右偏倚推移 (正中50%)</div>
+                  ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
+            <div class="flex flex-col justify-between space-y-2.5">
+              <!-- Repetition Breakdown Table -->
+              <div class="space-y-1">
+                <h2 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-slate-700"></span>
+                  各回生体力学メトリクス一覧
+                </h2>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                  <table class="w-full text-[10.5px] border-collapse">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-700 border-b border-slate-200 text-[10px] font-bold">
+                        <th class="py-1 px-1.5 text-center">回</th>
+                        <th class="py-1 px-1 text-center">開始</th>
+                        <th class="py-1 px-1 text-center">離臀</th>
+                        <th class="py-1 px-1 text-center">完了</th>
+                        <th class="py-1 px-1 text-center">立ち上がり時間</th>
+                        <th class="py-1 px-1 text-center">ピーク床反力</th>
+                        <th class="py-1 px-1.5 text-center">左右偏倚率</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${tableRowsHtml}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Clinical Observation & Signature Block -->
+              <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/70 grid grid-cols-3 gap-3 flex-1 flex flex-col justify-between">
+                <div class="col-span-2 flex flex-col justify-between space-y-2">
+                  <span class="text-[10px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
+                  <div class="space-y-3.5 flex-1 pt-1">
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                  </div>
+                </div>
+                <div class="flex flex-col justify-between space-y-2 border-l border-slate-200 pl-3">
+                  <span class="text-[10px] font-bold text-slate-600">【評価担当者 署名】</span>
+                  <div class="h-20 border-b border-dashed border-slate-300 flex items-end justify-center pb-1 text-slate-300 text-[10px]">印・サイン</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Draw the Stick Picture Sequence on Canvas
+      if (targetTrial) {
+        setTimeout(() => {
+          renderStickPictureOnCanvas(targetTrial, res.frames);
+        }, 50);
+      }
+    }
+
+    // Stick Picture Sequence Renderer (Supports Dynamic Canvas Scaling & Mirror Inversion)
+    function renderStickPictureOnCanvas(trial, frames) {
+      const c = document.getElementById("stickPictureCanvas");
+      if (!c) return;
+      const ctx2 = c.getContext("2d");
+      const w = c.width;
+      const h = c.height;
+      ctx2.clearRect(0, 0, w, h);
+
+      const fStart = StsMetricCalculator.nearestFrame(frames, trial.startTimeMs);
+      const fSeat = StsMetricCalculator.nearestFrame(frames, trial.seatOffTimeMs);
+      const fStand = StsMetricCalculator.nearestFrame(frames, trial.standEndTimeMs);
+
+      const keyPhases = [
+        { label: `① 開始 (${(trial.startTimeMs / 1000).toFixed(2)}s)`, frame: fStart, color: "#38bdf8", stroke: "rgba(56, 189, 248, 0.9)" },
+        { label: `② 離臀 (${(trial.seatOffTimeMs / 1000).toFixed(2)}s)`, frame: fSeat, color: "#fb923c", stroke: "rgba(251, 146, 60, 0.9)" },
+        { label: `③ 完了 (${(trial.standEndTimeMs / 1000).toFixed(2)}s)`, frame: fStand, color: "#4ade80", stroke: "rgba(74, 222, 128, 0.9)" }
+      ];
+
+      const slotW = w / 3;
+      const isMirrored = isFrontCameraMirrored;
+
+      // Draw Ground Level Baseline
+      ctx2.strokeStyle = "rgba(148, 163, 184, 0.4)";
+      ctx2.lineWidth = 1.2;
+      ctx2.setLineDash([3, 3]);
+      ctx2.beginPath();
+      ctx2.moveTo(8, h - 12);
+      ctx2.lineTo(w - 8, h - 12);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+
+      const connections = [
+        [11, 12], [11, 23], [12, 24], [23, 24],
+        [23, 25], [24, 26], [25, 27], [26, 28],
+        [27, 29], [28, 30], [29, 31], [30, 32]
+      ];
+
+      const spreadX = Math.min(150, slotW * 0.78);
+      const topY = 20;
+      const scaleY = (h - 36);
+      const baseY = h - 12;
+
+      keyPhases.forEach((phase, idx) => {
+        const ox = idx * slotW;
+        const cx = ox + slotW / 2;
+        const frame = phase.frame;
+        if (!frame || !frame.landmarks) return;
+
+        // Label
+        ctx2.fillStyle = phase.color;
+        ctx2.font = "bold 9.5px sans-serif";
+        ctx2.textAlign = "center";
+        ctx2.fillText(phase.label, cx, 13);
+
+        const lms = frame.landmarks;
+
+        // Skeleton Links (Mirror handled)
+        ctx2.strokeStyle = phase.stroke;
+        ctx2.lineWidth = 2.4;
+        for (const [p1, p2] of connections) {
+          const pt1 = lms[p1];
+          const pt2 = lms[p2];
+          if (pt1 && pt2) {
+            const rx1 = isMirrored ? (0.5 - pt1.x) : (pt1.x - 0.5);
+            const rx2 = isMirrored ? (0.5 - pt2.x) : (pt2.x - 0.5);
+            const x1 = cx + rx1 * spreadX;
+            const y1 = topY + pt1.y * scaleY;
+            const x2 = cx + rx2 * spreadX;
+            const y2 = topY + pt2.y * scaleY;
+            ctx2.beginPath();
+            ctx2.moveTo(x1, y1);
+            ctx2.lineTo(x2, y2);
+            ctx2.stroke();
+          }
+        }
+
+        // Joints
+        for (const i in lms) {
+          const pt = lms[i];
+          const rx = isMirrored ? (0.5 - pt.x) : (pt.x - 0.5);
+          const px = cx + rx * spreadX;
+          const py = topY + pt.y * scaleY;
+          ctx2.fillStyle = "#ffffff";
+          ctx2.beginPath();
+          ctx2.arc(px, py, 2.2, 0, Math.PI * 2);
+          ctx2.fill();
+        }
+
+        // CoM (🟡)
+        const rawComX = isMirrored ? (0.5 - frame.comX) : (frame.comX - 0.5);
+        const comPx = cx + rawComX * spreadX;
+        const comPy = topY + frame.comY * scaleY;
+        ctx2.fillStyle = "#eab308";
+        ctx2.beginPath();
+        ctx2.arc(comPx, comPy, 4.2, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.strokeStyle = "#ffffff";
+        ctx2.lineWidth = 1.2;
+        ctx2.stroke();
+
+        // BoS (🟢)
+        const rawBosX = isMirrored ? (0.5 - frame.midBaseX) : (frame.midBaseX - 0.5);
+        const bosPx = cx + rawBosX * spreadX;
+        ctx2.fillStyle = "#22c55e";
+        ctx2.beginPath();
+        ctx2.arc(bosPx, baseY, 3, 0, Math.PI * 2);
+        ctx2.fill();
+      });
+    }
+
+    // CSV Download
+    exportCsvBtn.onclick = () => {
+      if (analysisResult) {
+        StsCsvExporter.downloadCsv(analysisResult);
+      }
+    };
+  </script>
+</body>
+</html>
+

@@ -859,6 +859,59 @@
       };
     }
 
+    // Native iOS App (iPad Pro ARKit + LiDAR) 一括測定ブリッジ
+    window.loadNativeARKitData = function(jsonStr, modeStr) {
+      try {
+        const frames = (typeof jsonStr === "string") ? JSON.parse(jsonStr) : jsonStr;
+        if (!Array.isArray(frames) || frames.length < 5) {
+          console.warn("Invalid native ARKit frames count:", frames?.length);
+          return;
+        }
+
+        if (modeStr) {
+          const modeKey = Object.keys(StsMode).find(k => StsMode[k].id === modeStr || k === modeStr);
+          if (modeKey && StsMode[modeKey]) {
+            currentMode = StsMode[modeKey];
+            const r = document.querySelector(`input[name="stsMode"][value="${currentMode.id}"]`);
+            if (r) {
+              r.checked = true;
+              r.dispatchEvent(new Event('change'));
+            }
+          }
+        }
+
+        rawExtractedFrames = frames.map(f => {
+          const lmMap = {};
+          if (f.landmarks) {
+            for (const [k, pt] of Object.entries(f.landmarks)) {
+              lmMap[parseInt(k, 10)] = new Point2D(pt.x, pt.y);
+            }
+          }
+          const wlmMap = {};
+          if (f.worldLandmarks) {
+            for (const [k, pt] of Object.entries(f.worldLandmarks)) {
+              wlmMap[parseInt(k, 10)] = new Point3D(pt.x, pt.y, pt.z, pt.visibility || 0.99);
+            }
+          }
+          return new PoseFrameData({
+            timestampMs: f.timestampMs,
+            landmarks: lmMap,
+            worldLandmarks: wlmMap
+          });
+        });
+
+        if (lidarStatusBadge) {
+          lidarStatusBadge.classList.remove("hidden");
+          lidarStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> iPad Pro LiDAR実測連動中 (${rawExtractedFrames.length}フレーム)`;
+        }
+
+        runFullAnalysis();
+        console.log("Native ARKit LiDAR data processed successfully:", rawExtractedFrames.length, "frames");
+      } catch (err) {
+        console.error("Failed to load native ARKit data:", err);
+      }
+    };
+
     // LiDAR Data Parser (JSON & CSV & Summary)
     function parseLidarContent(text, fileName) {
       const trimmed = text.trim();
