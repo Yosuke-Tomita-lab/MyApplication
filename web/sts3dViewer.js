@@ -28,6 +28,7 @@ export class Sts3dViewer {
     this.currentFrameIndex = 0;
     this.currentFrame = null;
     this.isMirrored = false;
+    this.rigidBoneLengths = null;
 
     // Colors
     this.colors = {
@@ -278,30 +279,95 @@ export class Sts3dViewer {
   loadFrames(frames) {
     this.allFrames = frames || [];
     this.smoothedFrames = this.generateSmoothedFrames(this.allFrames);
+    this.rigidBoneLengths = this.computeRigidBoneLengths(this.smoothedFrames.length > 0 ? this.smoothedFrames : this.allFrames);
     this.updateTrajectoryCurve();
     if (this.smoothedFrames.length > 0) {
       this.updateFrame(this.smoothedFrames[0]);
     }
   }
 
-  // 1. Stable Global Ankle Anchor (Eliminates frame-by-frame jitter caused by fluctuating base references)
-  computeGlobalAnkleAnchor(frames) {
-    const xs = [], ys = [], zs = [];
-    for (const f of frames) {
+  // 1. Rigid Anatomical Bone Length Identifier (Median of Euclidean distances across frames)
+  computeRigidBoneLengths(frames) {
+    const dists = {
+      shankL: [], shankR: [],
+      thighL: [], thighR: [],
+      trunkL: [], trunkR: [],
+      upperArmL: [], upperArmR: [],
+      forearmL: [], forearmR: [],
+      pelvisW: [],
+      shoulderW: [],
+      ankleW: []
+    };
+
+    const calcDist = (p1, p2) => {
+      if (!p1 || !p2) return null;
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
+    };
+
+    frames.forEach(f => {
       const w = f.worldLandmarks;
-      if (w && w[27] && w[28]) {
-        xs.push((w[27].x + w[28].x) / 2);
-        ys.push(Math.max(w[27].y, w[28].y));
-        zs.push((w[27].z + w[28].z) / 2);
-      }
-    }
-    if (xs.length === 0) return { x: 0, y: 0.85, z: 0 };
-    // Use median for high outlier rejection
-    xs.sort((a, b) => a - b);
-    ys.sort((a, b) => a - b);
-    zs.sort((a, b) => a - b);
-    const mid = Math.floor(xs.length / 2);
-    return { x: xs[mid], y: ys[mid], z: zs[mid] };
+      if (!w) return;
+      // Shanks (Knee 25/26 to Ankle 27/28)
+      const dSL = calcDist(w[25], w[27]);
+      const dSR = calcDist(w[26], w[28]);
+      if (dSL && dSL > 0.2 && dSL < 0.65) dists.shankL.push(dSL);
+      if (dSR && dSR > 0.2 && dSR < 0.65) dists.shankR.push(dSR);
+
+      // Thighs (Hip 23/24 to Knee 25/26)
+      const dTL = calcDist(w[23], w[25]);
+      const dTR = calcDist(w[24], w[26]);
+      if (dTL && dTL > 0.2 && dTL < 0.65) dists.thighL.push(dTL);
+      if (dTR && dTR > 0.2 && dTR < 0.65) dists.thighR.push(dTR);
+
+      // Torso / Trunk (Hip 23/24 to Shoulder 11/12)
+      const dTrunkL = calcDist(w[23], w[11]);
+      const dTrunkR = calcDist(w[24], w[12]);
+      if (dTrunkL && dTrunkL > 0.25 && dTrunkL < 0.75) dists.trunkL.push(dTrunkL);
+      if (dTrunkR && dTrunkR > 0.25 && dTrunkR < 0.75) dists.trunkR.push(dTrunkR);
+
+      // Upper Arms (Shoulder 11/12 to Elbow 13/14)
+      const dAL = calcDist(w[11], w[13]);
+      const dAR = calcDist(w[12], w[14]);
+      if (dAL && dAL > 0.15 && dAL < 0.5) dists.upperArmL.push(dAL);
+      if (dAR && dAR > 0.15 && dAR < 0.5) dists.upperArmR.push(dAR);
+
+      // Forearms (Elbow 13/14 to Wrist 15/16)
+      const dFL = calcDist(w[13], w[15]);
+      const dFR = calcDist(w[14], w[16]);
+      if (dFL && dFL > 0.12 && dFL < 0.45) dists.forearmL.push(dFL);
+      if (dFR && dFR > 0.12 && dFR < 0.45) dists.forearmR.push(dFR);
+
+      // Stances
+      const dPelvis = calcDist(w[23], w[24]);
+      const dShoulder = calcDist(w[11], w[12]);
+      const dAnkle = calcDist(w[27], w[28]);
+      if (dPelvis && dPelvis > 0.12 && dPelvis < 0.45) dists.pelvisW.push(dPelvis);
+      if (dShoulder && dShoulder > 0.18 && dShoulder < 0.55) dists.shoulderW.push(dShoulder);
+      if (dAnkle && dAnkle > 0.10 && dAnkle < 0.50) dists.ankleW.push(dAnkle);
+    });
+
+    const median = (arr, fallback) => {
+      if (!arr || arr.length === 0) return fallback;
+      const sorted = [...arr].sort((a, b) => a - b);
+      return sorted[Math.floor(sorted.length / 2)];
+    };
+
+    const shankMedian = (median(dists.shankL, 0.42) + median(dists.shankR, 0.42)) / 2;
+    const thighMedian = (median(dists.thighL, 0.42) + median(dists.thighR, 0.42)) / 2;
+    const trunkMedian = (median(dists.trunkL, 0.48) + median(dists.trunkR, 0.48)) / 2;
+    const upperArmMedian = (median(dists.upperArmL, 0.28) + median(dists.upperArmR, 0.28)) / 2;
+    const forearmMedian = (median(dists.forearmL, 0.25) + median(dists.forearmR, 0.25)) / 2;
+
+    return {
+      shank: shankMedian,
+      thigh: thighMedian,
+      trunk: trunkMedian,
+      upperArm: upperArmMedian,
+      forearm: forearmMedian,
+      pelvisW: median(dists.pelvisW, 0.26),
+      shoulderW: median(dists.shoulderW, 0.36),
+      ankleW: median(dists.ankleW, 0.22)
+    };
   }
 
   // 2. Temporal Smoothing Filter (Applies Gaussian weighted moving average across frames)
@@ -426,32 +492,181 @@ export class Sts3dViewer {
   transformWorldPoint(pt, ref) {
     if (!pt) return null;
     const xVal = pt.x - ref.x;
-    const yVal = Math.max(0.01, (ref.y - pt.y) + 0.05); // 足部接地位置 Y=0.05m（床面上）、床下に潜らない
+    const yVal = Math.max(0.01, (ref.y - pt.y) + 0.05); // 足部接地位置 Y=0.05m（床面上）
     return new THREE.Vector3(
-      this.isMirrored ? -xVal : xVal, // 左右反転のみをシンプルに適用
-      yVal,                           // 垂直方向: 足部基準で身体・腰が上方へ自然に立ち上がる
-      -(pt.z - ref.z)                 // 前後方向: MediaPipe本来の自然な奥行き
+      xVal,
+      yVal,
+      -(pt.z - ref.z) // 前後方向: MediaPipe本来の奥行き
     );
+  }
+
+  // 2. Solve Rigid Anatomical Skeleton (Preserves Segment Lengths from Ankle Base to Head)
+  solveRigidSkeleton(rawJoints) {
+    if (!rawJoints) return rawJoints;
+    const b = this.rigidBoneLengths || {
+      shank: 0.42,
+      thigh: 0.42,
+      trunk: 0.48,
+      upperArm: 0.28,
+      forearm: 0.25,
+      pelvisW: 0.26,
+      shoulderW: 0.36,
+      ankleW: 0.22
+    };
+
+    const r = {};
+    for (const k in rawJoints) {
+      if (rawJoints[k]) r[k] = rawJoints[k].clone();
+    }
+
+    // 1. 足首 (27: Left Ankle, 28: Right Ankle) は床面接地固定 (Y=0.05, Z=0)
+    let pAnkL = r[27];
+    let pAnkR = r[28];
+    const halfAnkW = b.ankleW / 2;
+    if (pAnkL && pAnkR) {
+      pAnkL.set(-halfAnkW, 0.05, 0.0);
+      pAnkR.set(halfAnkW, 0.05, 0.0);
+    } else if (pAnkL) {
+      pAnkL.set(-halfAnkW, 0.05, 0.0);
+    } else if (pAnkR) {
+      pAnkR.set(halfAnkW, 0.05, 0.0);
+    }
+
+    // 2. 膝 (25: Left Knee, 26: Right Knee) - 足首起点で下腿長 b.shank を固定
+    if (r[25] && pAnkL) {
+      const dirKneeL = new THREE.Vector3().subVectors(r[25], pAnkL).normalize();
+      if (dirKneeL.lengthSq() < 0.001 || dirKneeL.y < 0) dirKneeL.set(0, 0.95, 0.3).normalize();
+      r[25] = new THREE.Vector3().copy(pAnkL).addScaledVector(dirKneeL, b.shank);
+    }
+    if (r[26] && pAnkR) {
+      const dirKneeR = new THREE.Vector3().subVectors(r[26], pAnkR).normalize();
+      if (dirKneeR.lengthSq() < 0.001 || dirKneeR.y < 0) dirKneeR.set(0, 0.95, 0.3).normalize();
+      r[26] = new THREE.Vector3().copy(pAnkR).addScaledVector(dirKneeR, b.shank);
+    }
+
+    // 3. 股関節 (23: Left Hip, 24: Right Hip) - 膝起点で大腿長 b.thigh を固定
+    if (r[23] && r[25]) {
+      const dirHipL = new THREE.Vector3().subVectors(r[23], r[25]).normalize();
+      if (dirHipL.lengthSq() < 0.001 || dirHipL.y < 0) dirHipL.set(0, 0.95, -0.3).normalize();
+      r[23] = new THREE.Vector3().copy(r[25]).addScaledVector(dirHipL, b.thigh);
+    }
+    if (r[24] && r[26]) {
+      const dirHipR = new THREE.Vector3().subVectors(r[24], r[26]).normalize();
+      if (dirHipR.lengthSq() < 0.001 || dirHipR.y < 0) dirHipR.set(0, 0.95, -0.3).normalize();
+      r[24] = new THREE.Vector3().copy(r[26]).addScaledVector(dirHipR, b.thigh);
+    }
+
+    // 4. 肩 (11: Left Shoulder, 12: Right Shoulder) - 股関節起点で体幹長 b.trunk を固定
+    if (r[11] && r[23]) {
+      const dirShL = new THREE.Vector3().subVectors(r[11], r[23]).normalize();
+      if (dirShL.lengthSq() < 0.001 || dirShL.y < 0) dirShL.set(0, 0.98, 0.1).normalize();
+      r[11] = new THREE.Vector3().copy(r[23]).addScaledVector(dirShL, b.trunk);
+    }
+    if (r[12] && r[24]) {
+      const dirShR = new THREE.Vector3().subVectors(r[12], r[24]).normalize();
+      if (dirShR.lengthSq() < 0.001 || dirShR.y < 0) dirShR.set(0, 0.98, 0.1).normalize();
+      r[12] = new THREE.Vector3().copy(r[24]).addScaledVector(dirShR, b.trunk);
+    }
+
+    // 5. 腕 (13, 14: 肘, 15, 16: 手首) - 上腕長・前腕長を固定
+    if (r[13] && r[11]) {
+      const dirElbL = new THREE.Vector3().subVectors(r[13], r[11]).normalize();
+      r[13] = new THREE.Vector3().copy(r[11]).addScaledVector(dirElbL, b.upperArm);
+    }
+    if (r[14] && r[12]) {
+      const dirElbR = new THREE.Vector3().subVectors(r[14], r[12]).normalize();
+      r[14] = new THREE.Vector3().copy(r[12]).addScaledVector(dirElbR, b.upperArm);
+    }
+    if (r[15] && r[13]) {
+      const dirWriL = new THREE.Vector3().subVectors(r[15], r[13]).normalize();
+      r[15] = new THREE.Vector3().copy(r[13]).addScaledVector(dirWriL, b.forearm);
+    }
+    if (r[16] && r[14]) {
+      const dirWriR = new THREE.Vector3().subVectors(r[16], r[14]).normalize();
+      r[16] = new THREE.Vector3().copy(r[14]).addScaledVector(dirWriR, b.forearm);
+    }
+
+    // 6. 頭部 (0: Nose)
+    if (r[11] && r[12]) {
+      const midSh = new THREE.Vector3().addVectors(r[11], r[12]).multiplyScalar(0.5);
+      r[0] = new THREE.Vector3(midSh.x, midSh.y + 0.22, midSh.z + 0.04);
+    }
+
+    // 7. つま先 (31: Left Toe, 32: Right Toe)
+    if (pAnkL) r[31] = new THREE.Vector3(pAnkL.x, 0.02, pAnkL.z + 0.14);
+    if (pAnkR) r[32] = new THREE.Vector3(pAnkR.x, 0.02, pAnkR.z + 0.14);
+
+    return r;
+  }
+
+  // 3. Get Full 3D Joints with Rigid Bone Preservation and In-Camera Mirroring
+  getFrameJoints3D(frame) {
+    if (!frame) return null;
+    const wlm = frame.worldLandmarks;
+    const has3D = wlm && Object.keys(wlm).length >= 10;
+    const ref = this.getAnkleReference(wlm);
+
+    const rawJoints = {};
+    if (has3D) {
+      const tracked = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32];
+      tracked.forEach(idx => {
+        if (wlm[idx]) {
+          rawJoints[idx] = this.transformWorldPoint(wlm[idx], ref);
+        }
+      });
+    } else if (frame.landmarks) {
+      // 2D fallback
+      const tracked = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32];
+      tracked.forEach(idx => {
+        const pt = frame.landmarks[idx];
+        if (pt) {
+          rawJoints[idx] = new THREE.Vector3(
+            (pt.x - 0.5) * 1.2,
+            Math.max(0.05, (1.0 - pt.y) * 1.5),
+            0
+          );
+        }
+      });
+    }
+
+    if (Object.keys(rawJoints).length === 0) return null;
+
+    // Rigid Bone Length Normalization
+    const rigidJoints = this.solveRigidSkeleton(rawJoints);
+
+    // In-Camera Mirroring: Swap left/right limbs & negate X coordinate
+    if (this.isMirrored) {
+      const swapPairs = {
+        11: 12, 12: 11,
+        13: 14, 14: 13,
+        15: 16, 16: 15,
+        23: 24, 24: 23,
+        25: 26, 26: 25,
+        27: 28, 28: 27,
+        31: 32, 32: 31,
+        0: 0
+      };
+      const mirroredJoints = {};
+      for (const idx in rigidJoints) {
+        const targetIdx = swapPairs[idx] !== undefined ? swapPairs[idx] : idx;
+        const pt = rigidJoints[idx];
+        mirroredJoints[targetIdx] = new THREE.Vector3(-pt.x, pt.y, pt.z);
+      }
+      return mirroredJoints;
+    }
+
+    return rigidJoints;
   }
 
   getFrameCom3D(frame) {
     if (!frame) return null;
-    const wlm = frame.worldLandmarks;
-    if (wlm && wlm[23] && wlm[24] && wlm[11] && wlm[12]) {
-      const ref = this.getAnkleReference(wlm);
+    const joints = this.getFrameJoints3D(frame);
+    if (joints && joints[23] && joints[24] && joints[11] && joints[12] && joints[27] && joints[28]) {
+      const midSh = new THREE.Vector3().addVectors(joints[11], joints[12]).multiplyScalar(0.5);
+      const midHip = new THREE.Vector3().addVectors(joints[23], joints[24]).multiplyScalar(0.5);
+      const midAnk = new THREE.Vector3().addVectors(joints[27], joints[28]).multiplyScalar(0.5);
 
-      const pShL = this.transformWorldPoint(wlm[11], ref);
-      const pShR = this.transformWorldPoint(wlm[12], ref);
-      const pHipL = this.transformWorldPoint(wlm[23], ref);
-      const pHipR = this.transformWorldPoint(wlm[24], ref);
-      const pAnkL = wlm[27] ? this.transformWorldPoint(wlm[27], ref) : pHipL;
-      const pAnkR = wlm[28] ? this.transformWorldPoint(wlm[28], ref) : pHipR;
-
-      const midSh = new THREE.Vector3().addVectors(pShL, pShR).multiplyScalar(0.5);
-      const midHip = new THREE.Vector3().addVectors(pHipL, pHipR).multiplyScalar(0.5);
-      const midAnk = new THREE.Vector3().addVectors(pAnkL, pAnkR).multiplyScalar(0.5);
-
-      // 3-segment biomechanical CoM model
+      // Dempster / Winter 3-segment biomechanical CoM model
       const cx = 0.35 * midSh.x + 0.35 * midHip.x + 0.30 * midAnk.x;
       const cy = 0.35 * midSh.y + 0.35 * midHip.y + 0.30 * midAnk.y;
       const cz = 0.35 * midSh.z + 0.35 * midHip.z + 0.30 * midAnk.z;
@@ -545,31 +760,13 @@ export class Sts3dViewer {
     if (!frame) return;
     this.currentFrame = frame;
 
-    const wlm = frame.worldLandmarks;
-    const has3D = wlm && Object.keys(wlm).length >= 10;
-    const ref = this.getAnkleReference(wlm);
-
-    const get3DPos = (idx) => {
-      if (has3D && wlm[idx]) {
-        return this.transformWorldPoint(wlm[idx], ref);
-      }
-      // Fallback
-      const lm2 = frame.landmarks ? frame.landmarks[idx] : null;
-      if (lm2) {
-        const xVal = (lm2.x - 0.5) * 1.2;
-        return new THREE.Vector3(
-          this.isMirrored ? -xVal : xVal,
-          (1.0 - lm2.y) * 1.5,
-          0
-        );
-      }
-      return null;
-    };
+    const joints = this.getFrameJoints3D(frame);
+    if (!joints) return;
 
     // 1. Update Joint Spheres
     Object.entries(this.jointMeshes).forEach(([idxStr, mesh]) => {
       const idx = parseInt(idxStr);
-      const pos = get3DPos(idx);
+      const pos = joints[idx];
       if (pos) {
         mesh.position.copy(pos);
         mesh.visible = true;
@@ -580,8 +777,8 @@ export class Sts3dViewer {
 
     // 2. Update Bones (Cylinders)
     this.boneConnections.forEach(({ fromIdx, toIdx, mesh }) => {
-      const p1 = get3DPos(fromIdx);
-      const p2 = get3DPos(toIdx);
+      const p1 = joints[fromIdx];
+      const p2 = joints[toIdx];
       if (p1 && p2) {
         mesh.visible = true;
         this.positionCylinderBetweenPoints(mesh, p1, p2);
@@ -591,9 +788,9 @@ export class Sts3dViewer {
     });
 
     // 3. Update Head
-    const pNose = get3DPos(0) || (() => {
-      const pShL = get3DPos(11);
-      const pShR = get3DPos(12);
+    const pNose = joints[0] || (() => {
+      const pShL = joints[11];
+      const pShR = joints[12];
       if (pShL && pShR) {
         return new THREE.Vector3().addVectors(pShL, pShR).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.22, 0));
       }
@@ -606,10 +803,10 @@ export class Sts3dViewer {
     }
 
     // 4. Update Torso
-    const pShL = get3DPos(11);
-    const pShR = get3DPos(12);
-    const pHipL = get3DPos(23);
-    const pHipR = get3DPos(24);
+    const pShL = joints[11];
+    const pShR = joints[12];
+    const pHipL = joints[23];
+    const pHipR = joints[24];
 
     if (pShL && pShR && pHipL && pHipR) {
       const pMidSh = new THREE.Vector3().addVectors(pShL, pShR).multiplyScalar(0.5);
