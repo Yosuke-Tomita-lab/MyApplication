@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>立ち座り生体力学解析システム (STS Web Analyzer)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .badge { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-blue-200">
+          STS
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">立ち座り生体力学解析システム</h1>
+          <p class="text-xs text-slate-500">Sit-to-Stand Biomechanical Analyzer (Web PWA)</p>
+        </div>
+      </div>
+
+      <!-- Mode Selector Chips -->
+      <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl overflow-x-auto max-w-full">
+        <button id="modeSingleBtn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap">
+          通常立ち上がり
+        </button>
+        <button id="mode5Btn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap">
+          5回 (5STS)
+        </button>
+        <button id="mode30sBtn" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap">
+          30秒 (30s-STS)
+        </button>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center gap-2">
+        <button id="exportCsvBtn" disabled class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          CSV保存
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <!-- Left Column: Video & Pose Overlay (7 Cols) -->
+      <div class="lg:col-span-7 space-y-4">
+
+        <!-- Input & Settings Card -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <label class="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                動画を選択
+                <input type="file" id="videoFileInput" accept="video/*" class="hidden">
+              </label>
+              <button id="cameraToggleBtn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                カメラ起動
+              </button>
+            </div>
+
+            <div class="flex items-center gap-4 text-xs text-slate-600">
+              <label class="flex items-center gap-1.5">
+                <span>身長:</span>
+                <input type="number" id="heightInput" value="170" class="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-center font-medium"> cm
+              </label>
+              <label class="flex items-center gap-1.5">
+                <span>体重:</span>
+                <input type="number" id="weightInput" value="65" class="w-16 px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-center font-medium"> kg
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="mirrorCheckbox" class="rounded text-blue-600">
+                <span>左右反転</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Video Player & Canvas Container -->
+        <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[580px] flex items-center justify-center">
+          <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
+          <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
+
+          <!-- Placeholder -->
+          <div id="videoPlaceholder" class="text-center p-8 space-y-3">
+            <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            </div>
+            <p class="text-slate-300 font-medium text-sm">動画ファイルを選択するか、カメラを起動してください</p>
+            <p class="text-slate-500 text-xs">MediaPipe Pose が立ち座り動作を自動トラッキングします</p>
+          </div>
+
+          <!-- Analysis Loading Overlay -->
+          <div id="analysisLoading" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 hidden z-20">
+            <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <p id="analysisProgressText" class="text-white text-sm font-semibold">動画を解析中... 0%</p>
+          </div>
+        </div>
+
+        <!-- Video Controls Card -->
+        <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center gap-3">
+            <button id="playPauseBtn" disabled class="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
+              <svg id="playIcon" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="pauseIcon" class="w-5 h-5 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
+            <span id="timeDisplay" class="text-xs font-mono text-slate-500 whitespace-nowrap">0.00s / 0.00s</span>
+          </div>
+
+          <!-- Phase and Metrics Badge Banner -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-slate-500">フェーズ:</span>
+              <span id="currentPhaseBadge" class="badge bg-blue-100 text-blue-700 font-medium">待機</span>
+            </div>
+            <div class="flex items-center gap-4">
+              <div>重心偏倚: <span id="currentBiasText" class="font-bold text-slate-800">50.0% (正中)</span></div>
+              <div>鉛直GRF: <span id="currentGrfText" class="font-bold text-slate-800">100.0%BW</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Reports, Adjustments & Graphs (5 Cols) -->
+      <div class="lg:col-span-5 space-y-4">
+
+        <!-- 30s-STS Reps Adjustment Card (Visible only in 30s-STS mode) -->
+        <div id="thirtySecAdjustCard" class="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-3 hidden">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <h3 class="text-xs font-bold text-amber-900">30秒立ち座り 立ち上がり総数</h3>
+            </div>
+            <span class="text-xs text-amber-700">動画確認後に確定</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="minusRepBtn" class="w-9 h-9 rounded-xl bg-white border border-amber-300 font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm">－</button>
+            <input type="number" id="thirtySecRepsInput" min="1" max="60" value="10" class="flex-1 py-1.5 bg-white border border-amber-300 rounded-xl text-center font-bold text-amber-900 text-base shadow-sm">
+            <button id="plusRepBtn" class="w-9 h-9 rounded-xl bg-white border border-amber-300 font-bold text-amber-800 hover:bg-amber-100 transition shadow-sm">＋</button>
+            <button id="applyRepsBtn" class="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-xl shadow-sm transition">総数を反映</button>
+          </div>
+          <p class="text-[11px] text-amber-700 leading-tight">※ 第1回開始から30秒を経過した試行（6回目等）は自動的に除外されます。</p>
+        </div>
+
+        <!-- Overall Summary Report Card -->
+        <div id="summaryReportCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+              総合解析レポート
+            </h2>
+            <span id="reportModeBadge" class="badge bg-slate-100 text-slate-700">通常立ち上がり</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div class="text-[11px] text-slate-500" id="totalDurationLabel">トータル所要時間</div>
+              <div id="totalDurationVal" class="text-xl font-bold text-slate-800 mt-0.5">-- s</div>
+            </div>
+            <div class="bg-slate-50 p-3 rounded-xl border border-slate-100">
+              <div class="text-[11px] text-slate-500" id="repsCountLabel">完了試行数</div>
+              <div id="repsCountVal" class="text-xl font-bold text-blue-600 mt-0.5">-- 回</div>
+            </div>
+          </div>
+
+          <div id="attemptStatsRow" class="grid grid-cols-3 gap-2 text-center text-xs pt-1 border-t border-slate-100">
+            <div class="p-2 bg-slate-50 rounded-lg">
+              <div class="text-[10px] text-slate-400">総試行数</div>
+              <div id="statTotalAttempts" class="font-bold text-slate-700">--</div>
+            </div>
+            <div class="p-2 bg-emerald-50 rounded-lg text-emerald-700">
+              <div class="text-[10px] text-emerald-500">成功数 / 率</div>
+              <div id="statSuccessCount" class="font-bold">--</div>
+            </div>
+            <div class="p-2 bg-rose-50 rounded-lg text-rose-700">
+              <div class="text-[10px] text-rose-500">離臀失敗数 / 率</div>
+              <div id="statFailCount" class="font-bold">--</div>
+            </div>
+          </div>
+
+          <div id="failedTimesBox" class="p-2.5 bg-rose-50/60 border border-rose-100 rounded-xl text-xs text-rose-800 hidden">
+            <span class="font-semibold">離臀失敗イベント:</span>
+            <span id="failedTimesList" class="ml-1 font-mono">なし</span>
+          </div>
+        </div>
+
+        <!-- Trial Tabs & Event Adjustment Sliders -->
+        <div id="trialEditCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <h3 class="text-xs font-bold text-slate-800">試行別タイミング微調整</h3>
+            <!-- Trial Tabs -->
+            <div id="trialTabsContainer" class="flex gap-1 overflow-x-auto max-w-[220px]">
+              <!-- Dynamically rendered tabs -->
+            </div>
+          </div>
+
+          <div id="trialEventSliders" class="space-y-3 text-xs">
+            <!-- Event Sliders (Start, SeatOff, StandEnd, Stable) -->
+            <div class="space-y-1">
+              <div class="flex justify-between font-medium">
+                <span class="text-blue-700 flex items-center gap-1">● 開始:</span>
+                <span id="sliderStartVal" class="font-mono">-- s</span>
+              </div>
+              <input type="range" id="sliderStart" class="w-full accent-blue-600">
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between font-medium">
+                <span class="text-orange-600 flex items-center gap-1">● 離臀:</span>
+                <span id="sliderSeatVal" class="font-mono">-- s</span>
+              </div>
+              <input type="range" id="sliderSeat" class="w-full accent-orange-500">
+            </div>
+
+            <div class="space-y-1">
+              <div class="flex justify-between font-medium">
+                <span class="text-emerald-600 flex items-center gap-1">● 立ち上がり終了:</span>
+                <span id="sliderEndVal" class="font-mono">-- s</span>
+              </div>
+              <input type="range" id="sliderEnd" class="w-full accent-emerald-500">
+            </div>
+
+            <div id="sliderStableBox" class="space-y-1">
+              <div class="flex justify-between font-medium">
+                <span class="text-purple-600 flex items-center gap-1">● 立位安定:</span>
+                <span id="sliderStableVal" class="font-mono">-- s</span>
+              </div>
+              <input type="range" id="sliderStable" class="w-full accent-purple-500">
+            </div>
+          </div>
+        </div>
+
+        <!-- Cumulative Time Graph Card -->
+        <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-cyan-500"></span>
+              各回累積時間 & 立ち上がり時間
+            </h3>
+            <span class="text-[10px] text-slate-400">所要時間推移</span>
+          </div>
+          <div class="h-48 relative">
+            <canvas id="cumTimeChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Lateral Bias Graph Card -->
+        <div id="biasGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+              重心左右偏倚推移 (50%正中基準)
+            </h3>
+            <span class="text-[10px] text-slate-400">青:左 / 橙:右</span>
+          </div>
+          <div class="h-48 relative">
+            <canvas id="biasChart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- App Script (ES Module) -->
+  <script type="module">
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D } from "./stsModels.js";
+    import { StsMetricCalculator } from "./stsMetrics.js";
+    import { StsCsvExporter } from "./stsExporter.js";
+    import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    // Application State
+    let currentMode = StsMode.SINGLE;
+    let anthropometrics = new SubjectAnthropometrics(170, 65);
+    let isFrontCameraMirrored = false;
+    let poseLandmarker = null;
+    let analysisResult = null;
+    let selectedTrialIdx = 0;
+    let rawExtractedFrames = [];
+
+    // DOM Elements
+    const video = document.getElementById("videoElement");
+    const canvas = document.getElementById("overlayCanvas");
+    const ctx = canvas.getContext("2d");
+    const placeholder = document.getElementById("videoPlaceholder");
+    const loadingOverlay = document.getElementById("analysisLoading");
+    const progressText = document.getElementById("analysisProgressText");
+    const fileInput = document.getElementById("videoFileInput");
+    const cameraBtn = document.getElementById("cameraToggleBtn");
+    const playPauseBtn = document.getElementById("playPauseBtn");
+    const playIcon = document.getElementById("playIcon");
+    const pauseIcon = document.getElementById("pauseIcon");
+    const seekBar = document.getElementById("seekBar");
+    const timeDisplay = document.getElementById("timeDisplay");
+    const exportCsvBtn = document.getElementById("exportCsvBtn");
+
+    // Mode Buttons
+    const modeSingleBtn = document.getElementById("modeSingleBtn");
+    const mode5Btn = document.getElementById("mode5Btn");
+    const mode30sBtn = document.getElementById("mode30sBtn");
+    const thirtySecAdjustCard = document.getElementById("thirtySecAdjustCard");
+    const thirtySecRepsInput = document.getElementById("thirtySecRepsInput");
+    const minusRepBtn = document.getElementById("minusRepBtn");
+    const plusRepBtn = document.getElementById("plusRepBtn");
+    const applyRepsBtn = document.getElementById("applyRepsBtn");
+
+    // Sliders
+    const sliderStart = document.getElementById("sliderStart");
+    const sliderSeat = document.getElementById("sliderSeat");
+    const sliderEnd = document.getElementById("sliderEnd");
+    const sliderStable = document.getElementById("sliderStable");
+    const sliderStableBox = document.getElementById("sliderStableBox");
+
+    // Charts
+    let cumTimeChart = null;
+    let biasChart = null;
+
+    // Initialize MediaPipe Pose Landmarker
+    async function initMediaPipe() {
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+        );
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numPoses: 1
+        });
+        console.log("MediaPipe Pose Landmarker ready.");
+      } catch (err) {
+        console.error("Failed to load MediaPipe:", err);
+      }
+    }
+    initMediaPipe();
+
+    // Mode Switching
+    function setMode(mode) {
+      currentMode = mode;
+      [modeSingleBtn, mode5Btn, mode30sBtn].forEach(b => {
+        b.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 whitespace-nowrap";
+      });
+      if (mode === StsMode.SINGLE) modeSingleBtn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
+      if (mode === StsMode.FIVE_TIMES) mode5Btn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
+      if (mode === StsMode.THIRTY_SECONDS) mode30sBtn.className = "px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-white text-blue-700 shadow-sm whitespace-nowrap";
+
+      document.getElementById("reportModeBadge").innerText = mode.title;
+      thirtySecAdjustCard.classList.toggle("hidden", mode !== StsMode.THIRTY_SECONDS);
+      sliderStableBox.classList.toggle("hidden", mode === StsMode.THIRTY_SECONDS);
+
+      if (rawExtractedFrames.length > 5) {
+        runFullAnalysis();
+      }
+    }
+
+    modeSingleBtn.onclick = () => setMode(StsMode.SINGLE);
+    mode5Btn.onclick = () => setMode(StsMode.FIVE_TIMES);
+    mode30sBtn.onclick = () => setMode(StsMode.THIRTY_SECONDS);
+
+    // 30s-STS Reps Adjustment Controls
+    minusRepBtn.onclick = () => {
+      thirtySecRepsInput.value = Math.max(1, parseInt(thirtySecRepsInput.value || 1) - 1);
+    };
+    plusRepBtn.onclick = () => {
+      thirtySecRepsInput.value = Math.min(60, parseInt(thirtySecRepsInput.value || 1) + 1);
+    };
+    applyRepsBtn.onclick = () => {
+      const newCount = parseInt(thirtySecRepsInput.value || 10);
+      if (analysisResult) {
+        analysisResult = StsMetricCalculator.adjustTrialsCount(analysisResult, newCount);
+        renderReport();
+        renderCharts();
+        renderTrialTabs();
+      }
+    };
+
+    // Video File Selection & Extraction
+    fileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.classList.remove("hidden");
+      placeholder.classList.add("hidden");
+      playPauseBtn.disabled = false;
+      seekBar.disabled = false;
+
+      await video.play().catch(() => {});
+      video.pause();
+
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+
+      await extractFramesAndAnalyze();
+    };
+
+    // Camera Toggle
+    let isCameraRunning = false;
+    cameraBtn.onclick = async () => {
+      if (!isCameraRunning) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          video.srcObject = stream;
+          video.classList.remove("hidden");
+          placeholder.classList.add("hidden");
+          await video.play();
+          isCameraRunning = true;
+          cameraBtn.innerText = "カメラ停止";
+        } catch (err) {
+          alert("カメラの起動に失敗しました: " + err.message);
+        }
+      } else {
+        const stream = video.srcObject;
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+        isCameraRunning = false;
+        cameraBtn.innerText = "カメラ起動";
+      }
+    };
+
+    // Frame Extraction & Pose Detection
+    async function extractFramesAndAnalyze() {
+      if (!poseLandmarker) {
+        alert("MediaPipeの初期化中です。数秒後にもう一度お試しください。");
+        return;
+      }
+
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "動画を解析中... 0%";
+
+      const duration = video.duration || 10;
+      const targetFps = 25.0;
+      const stepMs = 1000.0 / targetFps;
+      const totalSteps = Math.floor((duration * 1000) / stepMs);
+
+      rawExtractedFrames = [];
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = video.videoWidth;
+      offCanvas.height = video.videoHeight;
+      const offCtx = offCanvas.getContext("2d");
+
+      for (let i = 0; i <= totalSteps; i++) {
+        const timeMs = Math.round(i * stepMs);
+        video.currentTime = timeMs / 1000.0;
+        await new Promise(resolve => video.onseeked = resolve);
+
+        offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+        const result = poseLandmarker.detectForVideo(offCanvas, timeMs);
+
+        const lmMap = {};
+        if (result.landmarks && result.landmarks[0]) {
+          result.landmarks[0].forEach((lm, idx) => {
+            lmMap[idx] = new Point2D(lm.x, lm.y);
+          });
+        }
+
+        rawExtractedFrames.push(new PoseFrameData({
+          timestampMs: timeMs,
+          landmarks: lmMap
+        }));
+
+        if (i % 10 === 0) {
+          const pct = Math.round((i / totalSteps) * 100);
+          progressText.innerText = `動画を解析中... ${pct}%`;
+        }
+      }
+
+      video.currentTime = 0;
+      loadingOverlay.classList.add("hidden");
+
+      runFullAnalysis();
+    }
+
+    function runFullAnalysis() {
+      if (rawExtractedFrames.length < 5) return;
+
+      anthropometrics.heightCm = parseFloat(document.getElementById("heightInput").value || 170);
+      anthropometrics.weightKg = parseFloat(document.getElementById("weightInput").value || 65);
+      isFrontCameraMirrored = document.getElementById("mirrorCheckbox").checked;
+
+      const custom30s = currentMode === StsMode.THIRTY_SECONDS
+        ? parseInt(thirtySecRepsInput.value || 10)
+        : null;
+
+      analysisResult = StsMetricCalculator.calculate({
+        rawFrames: rawExtractedFrames,
+        mode: currentMode,
+        anthropometrics,
+        isFrontCameraMirrored,
+        customThirtySecReps: custom30s
+      });
+
+      exportCsvBtn.disabled = false;
+      renderReport();
+      renderCharts();
+      renderTrialTabs();
+      drawCurrentOverlay();
+    }
+
+    // Render Summary Report
+    function renderReport() {
+      if (!analysisResult) return;
+      const res = analysisResult;
+      const is30s = res.mode.id === "THIRTY_SECONDS";
+
+      document.getElementById("totalDurationLabel").innerText = is30s ? "30秒内経過時間" : "トータル所要時間";
+      document.getElementById("totalDurationVal").innerText = res.overallTotalDurationSec != null
+        ? `${res.overallTotalDurationSec.toFixed(2)} s`
+        : "-- s";
+
+      document.getElementById("repsCountLabel").innerText = is30s ? "30秒内完了回数" : "完了試行数";
+      document.getElementById("repsCountVal").innerText = `${is30s ? res.thirtySecCompletedCount : res.trials.length} 回`;
+
+      const totalAttempts = res.trials.length + res.failedAttempts.length;
+      document.getElementById("statTotalAttempts").innerText = `${totalAttempts} 回`;
+      const sRate = totalAttempts > 0 ? (res.trials.length / totalAttempts * 100).toFixed(0) : 0;
+      document.getElementById("statSuccessCount").innerText = `${res.trials.length} (${sRate}%)`;
+      const fRate = totalAttempts > 0 ? (res.failedAttempts.length / totalAttempts * 100).toFixed(0) : 0;
+      document.getElementById("statFailCount").innerText = `${res.failedAttempts.length} (${fRate}%)`;
+
+      const failedBox = document.getElementById("failedTimesBox");
+      if (res.failedAttempts.length > 0) {
+        failedBox.classList.remove("hidden");
+        document.getElementById("failedTimesList").innerText = res.failedAttempts
+          .map(f => (f.timestampMs / 1000.0).toFixed(2) + "s")
+          .join(", ");
+      } else {
+        failedBox.classList.add("hidden");
+      }
+    }
+
+    // Render Trial Tabs and Sliders
+    function renderTrialTabs() {
+      const container = document.getElementById("trialTabsContainer");
+      container.innerHTML = "";
+      if (!analysisResult || analysisResult.trials.length === 0) return;
+
+      analysisResult.trials.forEach((t, idx) => {
+        const btn = document.createElement("button");
+        btn.innerText = `${t.repIndex}回目`;
+        btn.className = idx === selectedTrialIdx
+          ? "px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white whitespace-nowrap shadow-sm"
+          : "px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap";
+        btn.onclick = () => {
+          selectedTrialIdx = idx;
+          renderTrialTabs();
+          loadTrialSliders();
+        };
+        container.appendChild(btn);
+      });
+
+      loadTrialSliders();
+    }
+
+    function loadTrialSliders() {
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+      const trial = analysisResult.trials[selectedTrialIdx];
+      const maxMs = rawExtractedFrames[rawExtractedFrames.length - 1].timestampMs;
+
+      [sliderStart, sliderSeat, sliderEnd, sliderStable].forEach(s => {
+        s.min = 0;
+        s.max = maxMs;
+        s.step = 20;
+      });
+
+      sliderStart.value = trial.startTimeMs;
+      sliderSeat.value = trial.seatOffTimeMs;
+      sliderEnd.value = trial.standEndTimeMs;
+      sliderStable.value = trial.stableTimeMs;
+
+      updateSliderLabels();
+
+      sliderStart.oninput = onSliderChange;
+      sliderSeat.oninput = onSliderChange;
+      sliderEnd.oninput = onSliderChange;
+      sliderStable.oninput = onSliderChange;
+    }
+
+    function updateSliderLabels() {
+      document.getElementById("sliderStartVal").innerText = (sliderStart.value / 1000.0).toFixed(2) + "s";
+      document.getElementById("sliderSeatVal").innerText = (sliderSeat.value / 1000.0).toFixed(2) + "s";
+      document.getElementById("sliderEndVal").innerText = (sliderEnd.value / 1000.0).toFixed(2) + "s";
+      document.getElementById("sliderStableVal").innerText = (sliderStable.value / 1000.0).toFixed(2) + "s";
+    }
+
+    function onSliderChange() {
+      updateSliderLabels();
+      if (!analysisResult || !analysisResult.trials[selectedTrialIdx]) return;
+
+      const is30s = analysisResult.mode.id === "THIRTY_SECONDS";
+      const startMs = parseInt(sliderStart.value);
+      const seatMs = parseInt(sliderSeat.value);
+      const endMs = parseInt(sliderEnd.value);
+      const stableMs = is30s ? endMs : parseInt(sliderStable.value);
+
+      const updated = StsMetricCalculator.recalculateTrialFromTimestamps({
+        repIndex: analysisResult.trials[selectedTrialIdx].repIndex,
+        frames: analysisResult.frames,
+        startTimeMs: startMs,
+        seatOffTimeMs: seatMs,
+        standEndTimeMs: endMs,
+        stableTimeMs: stableMs
+      });
+
+      analysisResult.trials[selectedTrialIdx] = updated;
+
+      // 30s-STS の場合は30秒ウィンドウ制限を再評価
+      if (is30s && analysisResult.trials.length > 0) {
+        const t0 = analysisResult.trials[0].startTimeMs;
+        analysisResult.trials = analysisResult.trials.filter(t => t.standEndTimeMs <= t0 + 30000);
+      }
+
+      renderReport();
+      renderCharts();
+      drawCurrentOverlay();
+    }
+
+    // Render Charts (Chart.js)
+    function renderCharts() {
+      if (!analysisResult || analysisResult.trials.length === 0) return;
+      const trials = analysisResult.trials;
+      const labels = trials.map(t => `${t.repIndex}回`);
+      const t0 = trials[0].startTimeMs;
+
+      // 1. Cumulative Time Chart
+      const cumTimes = trials.map(t => ((t.standEndTimeMs - t0) / 1000.0).toFixed(2));
+      const singleTimes = trials.map(t => t.totalDurationSec.toFixed(2));
+
+      if (cumTimeChart) cumTimeChart.destroy();
+      const ctxCum = document.getElementById("cumTimeChart").getContext("2d");
+      cumTimeChart = new Chart(ctxCum, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "line",
+              label: "累積時間 (s)",
+              data: cumTimes,
+              borderColor: "#0284c7",
+              backgroundColor: "#0284c7",
+              tension: 0.2,
+              yAxisID: "y"
+            },
+            {
+              type: "bar",
+              label: "各回時間 (s)",
+              data: singleTimes,
+              backgroundColor: "rgba(14, 165, 233, 0.45)",
+              borderColor: "#0ea5e9",
+              borderWidth: 1,
+              yAxisID: "y"
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: "#f1f5f9" } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+
+      // 2. Lateral Bias Chart
+      const meanBiases = trials.map(t => (t.meanLeftBiasPercent - 50.0).toFixed(1));
+      const seatBiases = trials.map(t => (t.biasAtSeatOff.leftPercent - 50.0).toFixed(1));
+
+      if (biasChart) biasChart.destroy();
+      const ctxBias = document.getElementById("biasChart").getContext("2d");
+      biasChart = new Chart(ctxBias, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "bar",
+              label: "正中乖離 (青:左 / 橙:右)",
+              data: meanBiases,
+              backgroundColor: meanBiases.map(v => v >= 0 ? "rgba(59, 130, 246, 0.6)" : "rgba(249, 115, 22, 0.6)"),
+              borderColor: meanBiases.map(v => v >= 0 ? "#2563eb" : "#ea580c"),
+              borderWidth: 1
+            },
+            {
+              type: "line",
+              label: "離臀時偏倚 (◆)",
+              data: seatBiases,
+              borderColor: "#8b5cf6",
+              backgroundColor: "#8b5cf6",
+              pointStyle: "rectRot",
+              pointRadius: 6,
+              showLine: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+          scales: {
+            y: {
+              grid: { color: "#f1f5f9" },
+              ticks: { callback: v => (v > 0 ? `L +${v}%` : v < 0 ? `R ${v}%` : "0 (正中)") }
+            },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    // Video Playback & Overlay Drawing
+    playPauseBtn.onclick = () => {
+      if (video.paused) {
+        video.play();
+        playIcon.classList.add("hidden");
+        pauseIcon.classList.remove("hidden");
+      } else {
+        video.pause();
+        playIcon.classList.remove("hidden");
+        pauseIcon.classList.add("hidden");
+      }
+    };
+
+    video.ontimeupdate = () => {
+      const cur = video.currentTime;
+      const dur = video.duration || 1;
+      seekBar.value = Math.round((cur / dur) * 1000);
+      timeDisplay.innerText = `${cur.toFixed(2)}s / ${dur.toFixed(2)}s`;
+      drawCurrentOverlay();
+    };
+
+    seekBar.oninput = () => {
+      const dur = video.duration || 1;
+      video.currentTime = (seekBar.value / 1000.0) * dur;
+      drawCurrentOverlay();
+    };
+
+    // Draw Skeleton, CoM, and BoS on Overlay Canvas
+    function drawCurrentOverlay() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!analysisResult || analysisResult.frames.length === 0) return;
+
+      const currentMs = Math.round(video.currentTime * 1000.0);
+      const frame = StsMetricCalculator.nearestFrame(analysisResult.frames, currentMs);
+      if (!frame) return;
+
+      // Update Phase Badge and Live Numbers
+      const activePhase = StsCsvExporter.resolveActivePhase(
+        currentMs,
+        analysisResult.trials,
+        analysisResult.failedAttempts,
+        analysisResult.mode.id === "THIRTY_SECONDS"
+      );
+      document.getElementById("currentPhaseBadge").innerText = `${activePhase.rep}: ${activePhase.phase}`;
+      const biasSide = frame.leftBiasPercent > 50.5 ? "左寄り" : frame.leftBiasPercent < 49.5 ? "右寄り" : "正中";
+      document.getElementById("currentBiasText").innerText = `${frame.leftBiasPercent.toFixed(1)}% (${biasSide})`;
+      document.getElementById("currentGrfText").innerText = frame.grf ? `${frame.grf.verticalPercentBw.toFixed(0)}%BW` : "100%BW";
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Draw Skeleton Lines
+      const connections = [
+        [11, 12], [11, 23], [12, 24], [23, 24],
+        [23, 25], [24, 26], [25, 27], [26, 28],
+        [27, 29], [28, 30], [29, 31], [30, 32]
+      ];
+      ctx.strokeStyle = "rgba(59, 130, 246, 0.8)";
+      ctx.lineWidth = 4;
+      for (const [p1, p2] of connections) {
+        const lm1 = frame.landmarks[p1];
+        const lm2 = frame.landmarks[p2];
+        if (lm1 && lm2) {
+          ctx.beginPath();
+          ctx.moveTo(lm1.x * w, lm1.y * h);
+          ctx.lineTo(lm2.x * w, lm2.y * h);
+          ctx.stroke();
+        }
+      }
+
+      // Draw Key Landmarks
+      for (const idx in frame.landmarks) {
+        const lm = frame.landmarks[idx];
+        ctx.fillStyle = "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(lm.x * w, lm.y * h, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw Center of Mass (CoM: 🟡)
+      ctx.fillStyle = "#eab308";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(frame.comX * w, frame.comY * h, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Draw Base of Support (BoS: 🟢)
+      ctx.fillStyle = "#22c55e";
+      ctx.beginPath();
+      ctx.arc(frame.midBaseX * w, frame.comY * h, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // CSV Download
+    exportCsvBtn.onclick = () => {
+      if (analysisResult) {
+        StsCsvExporter.downloadCsv(analysisResult);
+      }
+    };
+  </script>
+</body>
+</html>
