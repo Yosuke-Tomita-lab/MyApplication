@@ -274,7 +274,8 @@ object StsMetricCalculator {
 
         val startIdx = frames.indexOf(fStart).coerceAtLeast(0)
         val seatIdx = frames.indexOf(fSeat).coerceAtLeast(startIdx)
-        val stableIdx = frames.indexOf(fStable).coerceAtLeast(seatIdx)
+        val standIdx = frames.indexOf(fStand).coerceAtLeast(seatIdx)
+        val stableIdx = frames.indexOf(fStable).coerceAtLeast(standIdx)
 
         val meanSlice = frames.subList(startIdx, min(frames.size, stableIdx + 1))
         val meanLeft = if (meanSlice.isNotEmpty()) {
@@ -283,7 +284,8 @@ object StsMetricCalculator {
             50f
         }
 
-        val grfSlice = frames.subList(seatIdx, min(frames.size, stableIdx + 1))
+        // 床反力は離臀から立ち上がり完了までの間のピーク値を算出
+        val grfSlice = frames.subList(seatIdx, min(frames.size, standIdx + 1))
             .mapNotNull { it.grf }
 
         val peakVertBw = grfSlice.maxOfOrNull { it.verticalPercentBw } ?: 100f

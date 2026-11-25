@@ -260,14 +260,16 @@ export class StsMetricCalculator {
 
     const startIdx = Math.max(0, frames.indexOf(fStart));
     const seatIdx = Math.max(startIdx, frames.indexOf(fSeat));
-    const stableIdx = Math.max(seatIdx, frames.indexOf(fStable));
+    const standIdx = Math.max(seatIdx, frames.indexOf(fStand));
+    const stableIdx = Math.max(standIdx, frames.indexOf(fStable));
 
     const meanSlice = frames.slice(startIdx, Math.min(frames.length, stableIdx + 1));
     const meanLeft = meanSlice.length > 0
       ? meanSlice.reduce((sum, f) => sum + f.leftBiasPercent, 0) / meanSlice.length
       : 50.0;
 
-    const grfSlice = frames.slice(seatIdx, Math.min(frames.length, stableIdx + 1))
+    // 床反力は離臀から立ち上がり完了までの間のピーク値を算出
+    const grfSlice = frames.slice(seatIdx, Math.min(frames.length, standIdx + 1))
       .map(f => f.grf)
       .filter(Boolean);
 
