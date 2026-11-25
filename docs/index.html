@@ -314,11 +314,11 @@
         </div>
       </div>
 
-      <!-- STEP 3: Video Input & Camera Trigger -->
+      <!-- STEP 3: Video Input (Upload only) -->
       <div class="pt-2 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
-          <span class="text-xs font-bold text-slate-900">動画の選択 または カメラ起動</span>
+          <span class="text-xs font-bold text-slate-900">動画ファイルの選択（アップロード）</span>
         </div>
 
         <div class="flex items-center gap-3">
@@ -326,10 +326,6 @@
           <button id="selectVideoBtn" type="button" class="cursor-pointer px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-200 transition flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
             <span>動画ファイルを選択して解析</span>
-          </button>
-          <button id="cameraToggleBtn" class="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Webカメラ起動
           </button>
         </div>
       </div>
@@ -672,6 +668,41 @@
           </div>
         </div>
 
+        <!-- Knee-Hip Angle-Angle Diagram Card (サイクログラム) -->
+        <div id="angleAngleCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+            <div>
+              <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                膝伸展・股関節伸展 Angle-Angle Diagram
+              </h3>
+              <p class="text-[10px] text-slate-400 mt-0.5">
+                横軸: 膝屈曲 (°) ／ 縦軸: 股関節屈曲 (°) （○開始 → ◆離臀 → ■起立完了）
+              </p>
+            </div>
+            <!-- Trial Selection Tabs for Angle-Angle Diagram -->
+            <div class="flex items-center gap-1">
+              <span class="text-[10px] text-slate-400 mr-1 font-medium hidden sm:inline">表示:</span>
+              <div id="angleDiagramTabs" class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] overflow-x-auto max-w-[240px] sm:max-w-[320px]">
+                <button data-rep="ALL" class="angle-tab-btn px-2.5 py-1 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">全体重ね合わせ</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="h-64 relative bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+            <canvas id="angleAngleChart"></canvas>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100">
+            <div class="flex items-center gap-2">
+              <span class="inline-block w-2 h-2 rounded-full border border-slate-400 bg-white"></span><span>○開始</span>
+              <span class="inline-block w-2 h-2 bg-indigo-500 rotate-45"></span><span>◆離臀</span>
+              <span class="inline-block w-2 h-2 bg-emerald-500"></span><span>■起立完了</span>
+            </div>
+            <span class="text-emerald-700 font-semibold">右上（座位屈曲位）から左下（立位伸展位 0°, 0°）へ進行</span>
+          </div>
+        </div>
+
         <!-- Cumulative Time Graph Card -->
         <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
@@ -750,10 +781,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_17";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_17";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_17";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_17";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_18";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_18";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_18";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_18";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -781,7 +812,6 @@
     if (selectVideoBtn) {
       selectVideoBtn.onclick = () => fileInput.click();
     }
-    const cameraBtn = document.getElementById("cameraToggleBtn");
     const playPauseBtn = document.getElementById("playPauseBtn");
     const playIcon = document.getElementById("playIcon");
     const pauseIcon = document.getElementById("pauseIcon");
@@ -867,6 +897,8 @@
     // Charts
     let cumTimeChart = null;
     let biasChart = null;
+    let angleAngleChart = null;
+    let currentAngleRep = 'ALL';
 
     // Initialize MediaPipe Pose Landmarker
     async function initMediaPipe() {
@@ -1106,32 +1138,6 @@
         console.error("Video load error:", err);
         alert("動画の読み込み中にエラーが発生しました: " + err.message);
         loadingOverlay.classList.add("hidden");
-      }
-    };
-
-    // Camera Toggle
-    let isCameraRunning = false;
-    cameraBtn.onclick = async () => {
-      if (!isCameraRunning) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-          video.srcObject = stream;
-          video.classList.remove("hidden");
-          updateVideoVisibility();
-          placeholder.classList.add("hidden");
-          applyMirrorTransform();
-          await video.play();
-          isCameraRunning = true;
-          cameraBtn.innerText = "カメラ停止";
-        } catch (err) {
-          alert("カメラの起動に失敗しました: " + err.message);
-        }
-      } else {
-        const stream = video.srcObject;
-        if (stream) stream.getTracks().forEach(t => t.stop());
-        video.srcObject = null;
-        isCameraRunning = false;
-        cameraBtn.innerText = "Webカメラ起動";
       }
     };
 
@@ -1640,6 +1646,176 @@
           }
         }
       });
+
+      // 3. Knee-Hip Angle-Angle Diagram (Cyclogram)
+      renderAngleAngleChart('ALL');
+    }
+
+    // Knee-Hip Angle-Angle Diagram (Cyclogram: Knee Flexion vs Hip Flexion)
+    function renderAngleAngleChart(targetRep = currentAngleRep) {
+      if (!analysisResult || !analysisResult.trials || analysisResult.trials.length === 0) return;
+      currentAngleRep = targetRep;
+
+      const trials = analysisResult.trials;
+      const frames = analysisResult.frames || [];
+      if (frames.length === 0) return;
+
+      // Update Tabs UI
+      const tabsContainer = document.getElementById("angleDiagramTabs");
+      if (tabsContainer) {
+        let tabsHtml = `<button data-rep="ALL" class="angle-tab-btn px-2.5 py-1 rounded-lg ${currentAngleRep === 'ALL' ? 'bg-white font-bold text-slate-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'} transition">全体重ね合わせ</button>`;
+        trials.forEach(t => {
+          const isSel = String(currentAngleRep) === String(t.repIndex);
+          tabsHtml += `<button data-rep="${t.repIndex}" class="angle-tab-btn px-2 py-1 rounded-lg ${isSel ? 'bg-white font-bold text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'} transition">${t.repIndex}回</button>`;
+        });
+        tabsContainer.innerHTML = tabsHtml;
+
+        tabsContainer.querySelectorAll(".angle-tab-btn").forEach(btn => {
+          btn.onclick = () => {
+            const rep = btn.getAttribute("data-rep");
+            renderAngleAngleChart(rep);
+          };
+        });
+      }
+
+      // Filter Trials to plot
+      const targetTrials = currentAngleRep === 'ALL'
+        ? trials
+        : trials.filter(t => String(t.repIndex) === String(currentAngleRep));
+
+      const repColors = [
+        { border: "#0284c7", bg: "rgba(2, 132, 199, 0.15)" },   // Sky Blue (Rep 1)
+        { border: "#10b981", bg: "rgba(16, 185, 129, 0.15)" },  // Emerald (Rep 2)
+        { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.15)" },  // Purple (Rep 3)
+        { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.15)" },  // Amber (Rep 4)
+        { border: "#ec4899", bg: "rgba(236, 72, 153, 0.15)" },  // Pink (Rep 5)
+        { border: "#06b6d4", bg: "rgba(6, 182, 212, 0.15)" },   // Cyan (Rep 6)
+        { border: "#f97316", bg: "rgba(249, 115, 22, 0.15)" },  // Orange (Rep 7)
+        { border: "#6366f1", bg: "rgba(99, 102, 241, 0.15)" }   // Indigo (Rep 8)
+      ];
+
+      const datasets = [];
+      let maxX = 90;
+      let maxY = 90;
+
+      targetTrials.forEach((trial) => {
+        const cIndex = (trial.repIndex - 1) % repColors.length;
+        const color = repColors[cIndex];
+
+        // 起立区間のフレーム抽出 (startTimeMs 〜 standEndTimeMs または stableTimeMs)
+        const tStart = trial.startTimeMs;
+        const tEnd = trial.standEndTimeMs || trial.stableTimeMs;
+        const tSeatOff = trial.seatOffTimeMs;
+
+        const trialFrames = frames.filter(f => f.timestampMs >= tStart && f.timestampMs <= tEnd);
+        if (trialFrames.length < 2) return;
+
+        // 離臀タイミングに最も近いフレームを検出
+        let seatOffIdx = 0;
+        let minDiff = Infinity;
+        trialFrames.forEach((f, idx) => {
+          const diff = Math.abs(f.timestampMs - tSeatOff);
+          if (diff < minDiff) {
+            minDiff = diff;
+            seatOffIdx = idx;
+          }
+        });
+
+        const dataPoints = trialFrames.map(f => {
+          const kx = Math.max(0, Math.round((f.kneeAngleDeg || 0) * 10) / 10);
+          const hy = Math.max(0, Math.round((f.hipAngleDeg || 0) * 10) / 10);
+          if (kx > maxX) maxX = kx;
+          if (hy > maxY) maxY = hy;
+          return { x: kx, y: hy };
+        });
+
+        // 折れ線データセット
+        datasets.push({
+          type: "scatter",
+          label: `${trial.repIndex}回目`,
+          data: dataPoints,
+          showLine: true,
+          borderColor: color.border,
+          backgroundColor: color.border,
+          borderWidth: currentAngleRep === 'ALL' ? 2 : 2.5,
+          tension: 0.15,
+          pointRadius: (ctx) => {
+            const i = ctx.dataIndex;
+            if (i === 0) return 6; // 開始点（○）
+            if (i === seatOffIdx) return 7; // 離臀点（◆）
+            if (i === dataPoints.length - 1) return 6; // 起立完了点（■）
+            return currentAngleRep === 'ALL' ? 0 : 1.5;
+          },
+          pointStyle: (ctx) => {
+            const i = ctx.dataIndex;
+            if (i === 0) return 'circle';
+            if (i === seatOffIdx) return 'rectRot'; // ダイヤ（離臀）
+            if (i === dataPoints.length - 1) return 'rect'; // 四角（起立完了）
+            return 'circle';
+          },
+          pointHoverRadius: 8
+        });
+      });
+
+      if (angleAngleChart) angleAngleChart.destroy();
+      const canvasEl = document.getElementById("angleAngleChart");
+      if (!canvasEl) return;
+      const ctx = canvasEl.getContext("2d");
+
+      angleAngleChart = new Chart(ctx, {
+        type: "scatter",
+        data: { datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              position: "top",
+              labels: { boxWidth: 12, font: { size: 10 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.dataset.label || "";
+                  const p = ctx.raw;
+                  const idx = ctx.dataIndex;
+                  let eventTag = "";
+                  if (idx === 0) eventTag = " [開始]";
+                  else if (idx === ctx.dataset.data.length - 1) eventTag = " [起立完了]";
+                  return `${label}${eventTag}: 膝屈曲 ${p.x}°, 股屈曲 ${p.y}°`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: "linear",
+              title: {
+                display: true,
+                text: "膝関節 屈曲角度 (°) [←伸展 0° ... 屈曲→]",
+                font: { size: 11, weight: "bold" },
+                color: "#334155"
+              },
+              min: 0,
+              max: Math.ceil((maxX + 10) / 10) * 10,
+              grid: { color: "#f1f5f9" }
+            },
+            y: {
+              type: "linear",
+              title: {
+                display: true,
+                text: "股関節 屈曲角度 (°) [↓伸展 0° ... 屈曲↑]",
+                font: { size: 11, weight: "bold" },
+                color: "#334155"
+              },
+              min: 0,
+              max: Math.ceil((maxY + 10) / 10) * 10,
+              grid: { color: "#f1f5f9" }
+            }
+          }
+        }
+      });
     }
 
     // Smooth 60fps Playback Render Loop with requestAnimationFrame
@@ -1996,9 +2172,20 @@
       const sRate = totalAttempts > 0 ? ((trials.length / totalAttempts) * 100).toFixed(0) : 0;
       const fRate = totalAttempts > 0 ? ((fails.length / totalAttempts) * 100).toFixed(0) : 0;
 
+      // Ensure Angle-Angle Diagram is in Overlay mode for report
+      const prevRep = currentAngleRep;
+      if (currentAngleRep !== 'ALL') {
+        renderAngleAngleChart('ALL');
+      }
+
       // Extract Chart Images as Base64 (Crisp and reliable on print)
       const cumChartImg = cumTimeChart ? cumTimeChart.toBase64Image() : "";
       const biasChartImg = biasChart ? biasChart.toBase64Image() : "";
+      const angleChartImg = angleAngleChart ? angleAngleChart.toBase64Image() : "";
+
+      if (prevRep !== 'ALL') {
+        renderAngleAngleChart(prevRep);
+      }
 
       // トータル所要時間のフォールバック計算
       let totalSec = res.overallTotalDurationSec;
@@ -2107,14 +2294,18 @@
                 </div>
               </div>
 
-              <!-- Trend Graphs (2 Side-by-Side inside Left Column) -->
-              <div class="grid grid-cols-2 gap-2 pt-0.5">
-                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
-                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 各回累積時間 & 立ち上がり時間 (s)</div>
+              <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
+                  ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 各回累積 & 立ち上がり時間</div>
                   ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
-                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
-                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 重心左右偏倚推移 (50%正中基準)</div>
+                <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
+                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 重心左右偏倚推移 (正中50%)</div>
                   ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
               </div>
@@ -2227,14 +2418,18 @@
                 </div>
               </div>
 
-              <!-- Trend Graphs (2 Side-by-Side inside Left Column) -->
-              <div class="grid grid-cols-2 gap-2 pt-0.5">
-                <div class="border border-slate-200 rounded-lg p-2 bg-white flex flex-col justify-between">
-                  <div class="text-[10px] font-bold text-slate-700 mb-1">■ 累積時間 & 立ち上がり時間 (s)</div>
+              <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
+                  ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 累積&各回時間 (s)</div>
                   ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
-                <div class="border border-slate-200 rounded-lg p-2 bg-white flex flex-col justify-between">
-                  <div class="text-[10px] font-bold text-slate-700 mb-1">■ 重心左右偏倚推移 (50%正中基準)</div>
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 左右偏倚推移 (正中50%)</div>
                   ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
               </div>
