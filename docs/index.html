@@ -750,10 +750,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_14";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_14";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261125_14";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_14";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_15";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_15";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_15";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_15";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -909,6 +909,7 @@
       if (!sts3dViewer && sts3dContainer && window.THREE && typeof Sts3dViewer !== 'undefined') {
         try {
           sts3dViewer = new Sts3dViewer(sts3dContainer);
+          sts3dViewer.setMirrored(isFrontCameraMirrored);
           if (analysisResult && analysisResult.frames) {
             sts3dViewer.loadFrames(analysisResult.frames);
           }
@@ -1011,6 +1012,9 @@
       isFrontCameraMirrored = isMirrored;
       if (videoTransformWrapper) {
         videoTransformWrapper.style.transform = isMirrored ? "scaleX(-1)" : "scaleX(1)";
+      }
+      if (sts3dViewer) {
+        sts3dViewer.setMirrored(isMirrored);
       }
     }
 
@@ -1264,6 +1268,7 @@
       }
       if (sts3dViewer) {
         try {
+          sts3dViewer.setMirrored(isFrontCameraMirrored);
           sts3dViewer.loadFrames(analysisResult.frames);
         } catch (e) {
           console.warn("Failed to load frames into 3D viewer:", e);

@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261125_14";
+} from "./stsModels.js?v=20261125_15";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
