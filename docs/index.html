@@ -100,6 +100,36 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
 
+  <!-- Global Error Banner & Diagnostic Notice -->
+  <div id="globalErrorBanner" class="hidden bg-rose-600 text-white px-4 py-2.5 text-xs font-semibold z-50 sticky top-0 shadow-md flex items-center justify-between no-print">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+      <span id="globalErrorMessage">エラーを検出しました</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="location.reload(true)" class="bg-white/20 hover:bg-white/30 text-white px-2.5 py-1 rounded text-xs transition">キャッシュ強制クリア再読み込み (Ctrl+Shift+R)</button>
+      <button onclick="document.getElementById('globalErrorBanner').classList.add('hidden')" class="text-white hover:text-white/80 text-base leading-none font-bold px-1">&times;</button>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('error', function(e) {
+      var b = document.getElementById('globalErrorBanner');
+      var m = document.getElementById('globalErrorMessage');
+      if (b && m) {
+        m.innerText = 'スクリプトエラー: ' + (e.message || e);
+        b.classList.remove('hidden');
+      }
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      var b = document.getElementById('globalErrorBanner');
+      var m = document.getElementById('globalErrorMessage');
+      if (b && m) {
+        m.innerText = '非同期処理エラー: ' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+        b.classList.remove('hidden');
+      }
+    });
+  </script>
+
   <!-- Header -->
   <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm no-print">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
@@ -185,6 +215,58 @@
           </div>
         </label>
       </div>
+
+      <!-- Instant UI Synchronizer for Mode Cards (Runs immediately without waiting for async modules) -->
+      <script>
+        (function() {
+          const cards = document.querySelectorAll('.mode-card');
+          const radios = document.querySelectorAll('input[name="stsModeRadio"]');
+          const headerBadge = document.getElementById('activeModeBadgeHeader');
+          const reportBadge = document.getElementById('reportModeBadge');
+          const thirtyCard = document.getElementById('thirtySecAdjustCard');
+          const stableBox = document.getElementById('stableActionBox');
+
+          const modeTitles = {
+            'SINGLE': '通常立ち上がり',
+            'FIVE_TIMES': '5回立ち座り (5STS)',
+            'THIRTY_SECONDS': '30秒立ち座り (30s-STS)'
+          };
+
+          function syncModeCardUI(val) {
+            cards.forEach(card => {
+              const r = card.querySelector('input[type="radio"]');
+              if (r.value === val) {
+                r.checked = true;
+                card.className = "mode-card cursor-pointer border-2 border-blue-600 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-500";
+              } else {
+                card.className = "mode-card cursor-pointer border-2 border-slate-200 p-4 rounded-xl flex flex-col justify-between transition hover:border-blue-300";
+              }
+            });
+            const title = modeTitles[val] || '通常立ち上がり';
+            if (headerBadge) headerBadge.innerText = title;
+            if (reportBadge) reportBadge.innerText = title;
+            if (thirtyCard) thirtyCard.classList.toggle('hidden', val !== 'THIRTY_SECONDS');
+            if (stableBox) stableBox.classList.toggle('hidden', val === 'THIRTY_SECONDS');
+          }
+
+          radios.forEach(r => {
+            r.addEventListener('change', function() {
+              syncModeCardUI(this.value);
+            });
+          });
+
+          cards.forEach(card => {
+            card.addEventListener('click', function() {
+              const r = this.querySelector('input[type="radio"]');
+              if (r) {
+                r.checked = true;
+                syncModeCardUI(r.value);
+                r.dispatchEvent(new Event('change'));
+              }
+            });
+          });
+        })();
+      </script>
 
       <!-- Basic Anthropometrics & Camera Options -->
       <div class="bg-slate-50 p-4 rounded-xl flex flex-wrap items-center justify-between gap-4 text-xs border border-slate-100">
@@ -640,10 +722,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js";
-    import { StsMetricCalculator } from "./stsMetrics.js";
-    import { StsCsvExporter } from "./stsExporter.js";
-    import { Sts3dViewer } from "./sts3dViewer.js";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_06";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_06";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261125_06";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_06";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -768,13 +850,19 @@
     const camPerspectiveBtn = document.getElementById("camPerspectiveBtn");
     const camTopBtn = document.getElementById("camTopBtn");
 
-    // Initialize 3D Viewer
-    try {
-      if (sts3dContainer && window.THREE) {
-        sts3dViewer = new Sts3dViewer(sts3dContainer);
+    // Safe Lazy 3D Viewer Initializer
+    function ensure3dViewerInitialized() {
+      if (!sts3dViewer && sts3dContainer && window.THREE && typeof Sts3dViewer !== 'undefined') {
+        try {
+          sts3dViewer = new Sts3dViewer(sts3dContainer);
+          if (analysisResult && analysisResult.frames) {
+            sts3dViewer.loadFrames(analysisResult.frames);
+          }
+        } catch (e) {
+          console.warn("Lazy 3D viewer init error:", e);
+        }
       }
-    } catch (e) {
-      console.warn("Failed to initialize 3D viewer:", e);
+      return sts3dViewer;
     }
 
     // View Mode Toggle Logic
@@ -795,7 +883,16 @@
         viewport2d.classList.add("hidden");
         viewport3d.classList.remove("hidden");
         viewportsWrapper.className = "grid grid-cols-1 gap-3";
+        ensure3dViewerInitialized();
         if (sts3dViewer) sts3dViewer.onResize();
+      } else if (mode === "split") {
+        viewport2d.classList.remove("hidden");
+        viewport3d.classList.remove("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
+        ensure3dViewerInitialized();
+        if (sts3dViewer) sts3dViewer.onResize();
+      }
+    }
       } else if (mode === "split") {
         viewport2d.classList.remove("hidden");
         viewport3d.classList.remove("hidden");
@@ -1113,8 +1210,15 @@
         customThirtySecReps: custom30s
       });
 
+      if (currentViewMode !== "2d") {
+        ensure3dViewerInitialized();
+      }
       if (sts3dViewer) {
-        sts3dViewer.loadFrames(analysisResult.frames);
+        try {
+          sts3dViewer.loadFrames(analysisResult.frames);
+        } catch (e) {
+          console.warn("Failed to load frames into 3D viewer:", e);
+        }
       }
 
       exportCsvBtn.disabled = false;
@@ -1521,8 +1625,12 @@
       if (!frame) return;
 
       // Update 3D Mesh & Skeleton Model in Three.js Scene
-      if (sts3dViewer) {
-        sts3dViewer.updateFrame(frame);
+      if (sts3dViewer && currentViewMode !== "2d") {
+        try {
+          sts3dViewer.updateFrame(frame);
+        } catch (e) {
+          console.warn("Failed to update 3D frame:", e);
+        }
       }
 
       // Update Phase Badge and Live Numbers
