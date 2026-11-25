@@ -78,19 +78,19 @@
         break-inside: avoid !important;
       }
       #a4PrintContainer.is-portrait {
-        max-height: 285mm !important;
+        max-height: 275mm !important;
       }
       #a4PrintContainer:not(.is-portrait) {
-        max-height: 200mm !important;
+        max-height: 194mm !important;
       }
     }
   </style>
-  <!-- Dynamic Print Page Orientation Style (Defaults to Landscape 横長) -->
+  <!-- Dynamic Print Page Orientation Style (Defaults to Landscape 横長 with balanced margins) -->
   <style id="dynamicPageOrientationStyle">
     @media print {
       @page {
         size: A4 landscape;
-        margin: 4mm 6mm 4mm 6mm;
+        margin: 8mm 12mm 8mm 12mm;
       }
     }
   </style>
@@ -472,7 +472,7 @@
 
   <!-- REPORT PREVIEW MODAL & A4 PRINT CONTAINER -->
   <div id="reportPreviewModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
-    <div id="reportModalCard" class="bg-white rounded-2xl max-w-5xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
+    <div id="reportModalCard" class="bg-white rounded-2xl max-w-6xl w-full max-h-[94vh] flex flex-col shadow-2xl overflow-hidden">
       <!-- Modal Header -->
       <div class="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 bg-slate-50">
         <div class="flex items-center gap-2">
@@ -504,9 +504,9 @@
       </div>
 
       <!-- Modal Body (Scrollable preview wrapper) -->
-      <div class="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-100 flex justify-center">
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center">
         <!-- Rendered A4 Sheet (Target of print) -->
-        <div id="a4PrintContainer" class="bg-white w-full max-w-[980px] p-4 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-2">
+        <div id="a4PrintContainer" class="bg-white w-full max-w-[1040px] p-6 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-3">
           <!-- Dynamically populated report content -->
         </div>
       </div>
@@ -1234,14 +1234,14 @@
       const dynamicStyle = document.getElementById("dynamicPageOrientationStyle");
       if (currentReportOrientation === "landscape") {
         if (dynamicStyle) {
-          dynamicStyle.textContent = `@media print { @page { size: A4 landscape; margin: 4mm 6mm 4mm 6mm; } }`;
+          dynamicStyle.textContent = `@media print { @page { size: A4 landscape; margin: 8mm 12mm 8mm 12mm; } }`;
         }
         orientLandscapeBtn.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm flex items-center gap-1 transition font-bold";
         orientPortraitBtn.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 flex items-center gap-1 transition";
-        a4PrintContainer.className = "bg-white w-full max-w-[980px] p-4 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-2";
+        a4PrintContainer.className = "bg-white w-full max-w-[1040px] p-6 rounded-lg shadow-md border border-slate-200 text-slate-900 space-y-3";
       } else {
         if (dynamicStyle) {
-          dynamicStyle.textContent = `@media print { @page { size: A4 portrait; margin: 4mm 6mm 4mm 6mm; } }`;
+          dynamicStyle.textContent = `@media print { @page { size: A4 portrait; margin: 6mm 10mm 6mm 10mm; } }`;
         }
         orientPortraitBtn.className = "px-2.5 py-1 rounded-md bg-white text-indigo-700 shadow-sm flex items-center gap-1 transition font-bold";
         orientLandscapeBtn.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 flex items-center gap-1 transition";
@@ -1301,144 +1301,162 @@
       const cumChartImg = cumTimeChart ? cumTimeChart.toBase64Image() : "";
       const biasChartImg = biasChart ? biasChart.toBase64Image() : "";
 
-      // Build Table Rows
-      const tableRowsHtml = trials.map(t => `
-        <tr class="border-b border-slate-200 text-center text-[9.5px]">
-          <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
-          <td class="py-0.5 px-1 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
-          <td class="py-0.5 px-1 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
-          <td class="py-0.5 px-1 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
-          <td class="py-0.5 px-1 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
-          <td class="py-0.5 px-1 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW <span class="text-[8.5px] text-slate-500 font-normal">(${t.peakVerticalNewton.toFixed(0)}N)</span></td>
-          <td class="py-0.5 px-1 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
-        </tr>
-      `).join("");
-
       if (currentReportOrientation === "landscape") {
+        // Build Table Rows for Landscape
+        const tableRowsHtml = trials.map(t => `
+          <tr class="border-b border-slate-100 hover:bg-slate-50/50 text-center text-[10.5px]">
+            <td class="py-1 px-1.5 font-bold">${t.repIndex}</td>
+            <td class="py-1 px-1 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-1 px-1 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-1 px-1 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-1 px-1 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-1 px-1 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW <span class="text-[9px] text-slate-400 font-normal">(${t.peakVerticalNewton.toFixed(0)}N)</span></td>
+            <td class="py-1 px-1.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+          </tr>
+        `).join("");
+
         // ==========================================
-        // LANDSCAPE (A4横長) Optimized Layout
+        // LANDSCAPE (A4横長) Optimized Balanced Layout
         // ==========================================
         a4PrintContainer.innerHTML = `
           <!-- Report Header -->
-          <div class="border-b-2 border-slate-800 pb-1 flex justify-between items-end">
+          <div class="border-b-2 border-slate-800 pb-1.5 flex justify-between items-end">
             <div>
-              <h1 class="text-base font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート (STS Analysis Report)</h1>
-              <p class="text-[9.5px] text-slate-500 font-medium">Sit-to-Stand Biomechanical Motion Analysis Report 【A4横長 / Landscape】</p>
+              <h1 class="text-lg font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート</h1>
+              <p class="text-[11px] text-slate-500 font-medium">Sit-to-Stand (STS) Biomechanical Motion Analysis Report</p>
             </div>
-            <div class="text-right text-[9.5px] text-slate-600 leading-tight">
-              <div><strong>解析日:</strong> ${nowStr}</div>
-              <div><strong>システム:</strong> STS Analyzer (Web/PWA)</div>
+            <div class="text-right text-[11px] text-slate-600 leading-tight">
+              <div><strong>解析日時:</strong> ${nowStr}</div>
+              <div><strong>解析システム:</strong> STS Analyzer (Web/PWA)</div>
             </div>
           </div>
 
-          <!-- Subject & Protocol Information Bar + Summary Metrics (Compact Combined) -->
-          <div class="grid grid-cols-12 gap-2 text-[10px]">
+          <!-- Meta Row: Subject & Protocol Information + Overall Key Metrics -->
+          <div class="grid grid-cols-12 gap-3 text-xs">
             <!-- Subject Info (5 cols) -->
-            <div class="col-span-5 bg-slate-50 border border-slate-200 rounded-md p-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5">
+            <div class="col-span-5 bg-slate-50 border border-slate-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-3 gap-y-1">
               <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
-              <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(反転)" : "正面/背面(正像)"}</strong></div>
+              <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(左右反転)" : "正面/背面(正像)"}</strong></div>
               <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
               <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
             </div>
-            <!-- Overall Summary (7 cols) -->
-            <div class="col-span-7 grid grid-cols-4 gap-1.5 text-center">
-              <div class="p-1 bg-slate-50 border border-slate-200 rounded-md">
-                <div class="text-[9px] text-slate-500">${is30s ? "30秒内回数" : "トータル所要時間"}</div>
-                <div class="text-xs font-bold text-slate-900 mt-0.5">
-                  ${is30s ? res.thirtySecCompletedCount + " 回" : (res.overallTotalDurationSec ? res.overallTotalDurationSec.toFixed(2) + " s" : "-- s")}
+            <!-- Overall Summary Metrics (7 cols) -->
+            <div class="col-span-7 grid grid-cols-4 gap-2 text-center">
+              <div class="p-2 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[10px] text-slate-500">${is30s ? "30秒内回数" : "トータル所要時間"}</div>
+                <div class="text-sm font-extrabold text-slate-900 mt-0.5">
+                  ${is30s ? res.thirtySecCompletedCount + " <span class='text-xs font-normal'>回</span>" : (res.overallTotalDurationSec ? res.overallTotalDurationSec.toFixed(2) + " <span class='text-xs font-normal'>s</span>" : "--")}
                 </div>
               </div>
-              <div class="p-1 bg-slate-50 border border-slate-200 rounded-md">
-                <div class="text-[9px] text-slate-500">試行成績</div>
-                <div class="text-xs font-bold text-slate-800 mt-0.5">${trials.length} / ${totalAttempts} <span class="text-[8.5px] text-slate-500 font-normal">(${sRate}%)</span></div>
+              <div class="p-2 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[10px] text-slate-500">試行成績</div>
+                <div class="text-sm font-extrabold text-slate-800 mt-0.5">${trials.length} / ${totalAttempts} <span class="text-[10px] text-slate-500 font-normal">(${sRate}%)</span></div>
               </div>
-              <div class="p-1 bg-rose-50 border border-rose-200 rounded-md text-rose-800">
-                <div class="text-[9px] text-rose-600">離臀失敗数 / 確率</div>
-                <div class="text-xs font-bold mt-0.5">${fails.length} 回 <span class="text-[8.5px] font-normal">(${fRate}%)</span></div>
+              <div class="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 flex flex-col justify-center">
+                <div class="text-[10px] text-rose-600 font-medium">離臀失敗数 / 確率</div>
+                <div class="text-sm font-extrabold mt-0.5">${fails.length} <span class="text-xs font-normal">回</span> <span class="text-[10px] font-normal">(${fRate}%)</span></div>
               </div>
-              <div class="p-1 bg-blue-50 border border-blue-200 rounded-md text-blue-900">
-                <div class="text-[9px] text-blue-600">離臀〜完了 最大床反力</div>
-                <div class="text-xs font-bold mt-0.5">
-                  ${trials.length > 0 ? Math.max(...trials.map(t => t.peakVerticalBwPercent)).toFixed(0) + " %BW" : "--"}
+              <div class="p-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex flex-col justify-center">
+                <div class="text-[10px] text-blue-600 font-medium">離臀〜完了間 最大床反力</div>
+                <div class="text-sm font-extrabold mt-0.5">
+                  ${trials.length > 0 ? Math.max(...trials.map(t => t.peakVerticalBwPercent)).toFixed(0) + " <span class='text-xs font-normal'>%BW</span>" : "--"}
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Main 2-Column Area (Left: Stick Picture + 2 Charts / Right: Metrics Table + Notes & Signature) -->
-          <div class="grid grid-cols-12 gap-2.5 items-start">
-            <!-- Left Column: Visual (Stick picture + 2 charts) (5 cols) -->
-            <div class="col-span-5 space-y-1.5">
+          <!-- Main Section: Left Column (Visual Biomechanics) & Right Column (Metrics & Clinical Assessment) -->
+          <div class="grid grid-cols-2 gap-3.5 items-stretch">
+            <!-- Left Column: Stick Picture + Trend Graphs -->
+            <div class="flex flex-col justify-between space-y-2.5">
               <!-- Stick Picture -->
-              <div class="space-y-0.5">
-                <div class="flex justify-between items-center text-[10px]">
-                  <h2 class="font-bold text-slate-900 flex items-center gap-1">
-                    <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-                    動作シークエンス スティックピクチャ (${targetTrial ? targetTrial.repIndex + "回目" : "-"})
-                    ${res.isFrontCameraMirrored ? '<span class="text-[8.5px] bg-amber-100 text-amber-800 px-1 rounded">左右反転</span>' : ''}
+              <div class="space-y-1">
+                <div class="flex justify-between items-center text-xs">
+                  <h2 class="font-bold text-slate-900 flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-blue-600"></span>
+                    動作シークエンス スティックピクチャ (代表試行: ${targetTrial ? targetTrial.repIndex + "回目" : "-"})
+                    ${res.isFrontCameraMirrored ? '<span class="text-[9.5px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.2 rounded">自撮りカメラ反転補正済</span>' : ''}
                   </h2>
-                  <span class="text-[8.5px] text-slate-500">●黄:CoM / ●緑:支持面</span>
+                  <span class="text-[10px] text-slate-500 font-medium">●黄:身体重心(CoM) / ●緑:支持面 / 破線:床面</span>
                 </div>
-                <div class="bg-slate-900/95 rounded-md p-1 flex justify-center">
-                  <canvas id="stickPictureCanvas" width="480" height="92" class="w-full max-h-[92px]"></canvas>
+                <div class="bg-slate-950 rounded-lg p-1.5 flex justify-center shadow-inner">
+                  <canvas id="stickPictureCanvas" width="520" height="135" class="w-full max-h-[135px]"></canvas>
                 </div>
               </div>
 
-              <!-- 2 Charts Stacked -->
-              <div class="space-y-1">
-                <div class="border border-slate-200 rounded-md p-1.5 bg-white">
-                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 各回累積時間 & 立ち上がり時間 (s)</div>
-                  ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-[82px] object-contain">` : `<div class="h-[82px] flex items-center justify-center text-[9px] text-slate-400">グラフなし</div>`}
+              <!-- Trend Graphs (2 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-2 gap-2 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-2 bg-white flex flex-col justify-between">
+                  <div class="text-[10px] font-bold text-slate-700 mb-1">■ 累積時間 & 立ち上がり時間 (s)</div>
+                  ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
-                <div class="border border-slate-200 rounded-md p-1.5 bg-white">
-                  <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 重心左右偏倚推移 (50%正中基準 / ◆:離臀時)</div>
-                  ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-[82px] object-contain">` : `<div class="h-[82px] flex items-center justify-center text-[9px] text-slate-400">グラフなし</div>`}
+                <div class="border border-slate-200 rounded-lg p-2 bg-white flex flex-col justify-between">
+                  <div class="text-[10px] font-bold text-slate-700 mb-1">■ 重心左右偏倚推移 (50%正中基準)</div>
+                  ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
                 </div>
               </div>
             </div>
 
-            <!-- Right Column: Table + Notes / Signature (7 cols) -->
-            <div class="col-span-7 space-y-1.5">
-              <!-- Metrics Table -->
-              <div class="space-y-0.5">
-                <h2 class="text-[10px] font-bold text-slate-900 flex items-center gap-1">
-                  <span class="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+            <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
+            <div class="flex flex-col justify-between space-y-2.5">
+              <!-- Repetition Breakdown Table -->
+              <div class="space-y-1">
+                <h2 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-slate-700"></span>
                   各回生体力学メトリクス一覧
                 </h2>
-                <table class="w-full text-[9px] border-collapse border border-slate-200">
-                  <thead>
-                    <tr class="bg-slate-100 text-slate-700 border-b border-slate-300 text-[9px]">
-                      <th class="py-0.5 px-0.5 text-center">回</th>
-                      <th class="py-0.5 px-0.5 text-center">開始</th>
-                      <th class="py-0.5 px-0.5 text-center">離臀</th>
-                      <th class="py-0.5 px-0.5 text-center">完了</th>
-                      <th class="py-0.5 px-0.5 text-center">立ち上がり時間</th>
-                      <th class="py-0.5 px-0.5 text-center">離臀〜完了 ピーク床反力</th>
-                      <th class="py-0.5 px-0.5 text-center">平均左右偏倚</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${tableRowsHtml}
-                  </tbody>
-                </table>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                  <table class="w-full text-[10.5px] border-collapse">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-700 border-b border-slate-200 text-[10px] font-bold">
+                        <th class="py-1 px-1.5 text-center">回</th>
+                        <th class="py-1 px-1 text-center">開始</th>
+                        <th class="py-1 px-1 text-center">離臀</th>
+                        <th class="py-1 px-1 text-center">完了</th>
+                        <th class="py-1 px-1 text-center">立ち上がり時間</th>
+                        <th class="py-1 px-1 text-center">ピーク床反力</th>
+                        <th class="py-1 px-1.5 text-center">左右偏倚率</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${tableRowsHtml}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <!-- Clinical Observation & Signature Block -->
-              <div class="border border-slate-200 rounded-md p-2 grid grid-cols-3 gap-2 bg-slate-50/50">
-                <div class="col-span-2 space-y-1">
-                  <span class="text-[9px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
-                  <div class="h-7 border-b border-dashed border-slate-300"></div>
-                  <div class="h-7 border-b border-dashed border-slate-300"></div>
+              <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/70 grid grid-cols-3 gap-3 flex-1 flex flex-col justify-between">
+                <div class="col-span-2 flex flex-col justify-between space-y-2">
+                  <span class="text-[10px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
+                  <div class="space-y-3.5 flex-1 pt-1">
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                  </div>
                 </div>
-                <div class="space-y-1">
-                  <span class="text-[9px] font-bold text-slate-600">【評価担当者 署名】</span>
-                  <div class="h-15 border-b border-dashed border-slate-300"></div>
+                <div class="flex flex-col justify-between space-y-2 border-l border-slate-200 pl-3">
+                  <span class="text-[10px] font-bold text-slate-600">【評価担当者 署名】</span>
+                  <div class="h-20 border-b border-dashed border-slate-300 flex items-end justify-center pb-1 text-slate-300 text-[10px]">印・サイン</div>
                 </div>
               </div>
             </div>
           </div>
         `;
       } else {
+        // Build Table Rows for Portrait
+        const tableRowsHtml = trials.map(t => `
+          <tr class="border-b border-slate-200 text-center text-[10px]">
+            <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
+            <td class="py-0.5 px-1 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-1 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-1 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-1 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-0.5 px-1 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW <span class="text-[9px] text-slate-500 font-normal">(${t.peakVerticalNewton.toFixed(0)}N)</span></td>
+            <td class="py-0.5 px-1 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+          </tr>
+        `).join("");
+
         // ==========================================
         // PORTRAIT (A4縦長) Layout
         // ==========================================
@@ -1450,8 +1468,8 @@
               <p class="text-[10px] text-slate-500 font-medium">Sit-to-Stand (STS) Biomechanical Motion Analysis Report 【A4縦長 / Portrait】</p>
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
-              <div><strong>解析日:</strong> ${nowStr}</div>
-              <div><strong>システム:</strong> STS Analyzer (Web/PWA)</div>
+              <div><strong>解析日時:</strong> ${nowStr}</div>
+              <div><strong>解析システム:</strong> STS Analyzer (Web/PWA)</div>
             </div>
           </div>
 
@@ -1587,8 +1605,8 @@
       ctx2.lineWidth = 1.2;
       ctx2.setLineDash([3, 3]);
       ctx2.beginPath();
-      ctx2.moveTo(8, h - 10);
-      ctx2.lineTo(w - 8, h - 10);
+      ctx2.moveTo(8, h - 12);
+      ctx2.lineTo(w - 8, h - 12);
       ctx2.stroke();
       ctx2.setLineDash([]);
 
@@ -1598,10 +1616,10 @@
         [27, 29], [28, 30], [29, 31], [30, 32]
       ];
 
-      const spreadX = Math.min(140, slotW * 0.72);
-      const topY = 16;
-      const scaleY = (h - 26);
-      const baseY = h - 10;
+      const spreadX = Math.min(150, slotW * 0.78);
+      const topY = 20;
+      const scaleY = (h - 36);
+      const baseY = h - 12;
 
       keyPhases.forEach((phase, idx) => {
         const ox = idx * slotW;
@@ -1611,15 +1629,15 @@
 
         // Label
         ctx2.fillStyle = phase.color;
-        ctx2.font = "bold 9px sans-serif";
+        ctx2.font = "bold 9.5px sans-serif";
         ctx2.textAlign = "center";
-        ctx2.fillText(phase.label, cx, 11);
+        ctx2.fillText(phase.label, cx, 13);
 
         const lms = frame.landmarks;
 
         // Skeleton Links (Mirror handled)
         ctx2.strokeStyle = phase.stroke;
-        ctx2.lineWidth = 2.2;
+        ctx2.lineWidth = 2.4;
         for (const [p1, p2] of connections) {
           const pt1 = lms[p1];
           const pt2 = lms[p2];
@@ -1645,7 +1663,7 @@
           const py = topY + pt.y * scaleY;
           ctx2.fillStyle = "#ffffff";
           ctx2.beginPath();
-          ctx2.arc(px, py, 2, 0, Math.PI * 2);
+          ctx2.arc(px, py, 2.2, 0, Math.PI * 2);
           ctx2.fill();
         }
 
@@ -1655,7 +1673,7 @@
         const comPy = topY + frame.comY * scaleY;
         ctx2.fillStyle = "#eab308";
         ctx2.beginPath();
-        ctx2.arc(comPx, comPy, 4, 0, Math.PI * 2);
+        ctx2.arc(comPx, comPy, 4.2, 0, Math.PI * 2);
         ctx2.fill();
         ctx2.strokeStyle = "#ffffff";
         ctx2.lineWidth = 1.2;
@@ -1666,7 +1684,7 @@
         const bosPx = cx + rawBosX * spreadX;
         ctx2.fillStyle = "#22c55e";
         ctx2.beginPath();
-        ctx2.arc(bosPx, baseY, 2.8, 0, Math.PI * 2);
+        ctx2.arc(bosPx, baseY, 3, 0, Math.PI * 2);
         ctx2.fill();
       });
     }
