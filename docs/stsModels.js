@@ -40,6 +40,15 @@ export class Point2D {
   }
 }
 
+export class Point3D {
+  constructor(x = 0, y = 0, z = 0, visibility = 1.0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.visibility = visibility;
+  }
+}
+
 export class TimingBias {
   constructor(timestampMs, leftPercent, rightPercent) {
     this.timestampMs = timestampMs;
@@ -49,11 +58,24 @@ export class TimingBias {
 }
 
 export class GrfSample {
-  constructor(verticalPercentBw = 100.0, verticalNewton = 0.0, lateralPercentBw = 0.0, lateralNewton = 0.0) {
+  constructor(
+    verticalPercentBw = 100.0,
+    verticalNewton = 0.0,
+    lateralPercentBw = 0.0,
+    lateralNewton = 0.0,
+    apPropulsionPercentBw = 0.0,
+    apPropulsionNewton = 0.0,
+    apBrakingPercentBw = 0.0,
+    apBrakingNewton = 0.0
+  ) {
     this.verticalPercentBw = verticalPercentBw;
     this.verticalNewton = verticalNewton;
     this.lateralPercentBw = lateralPercentBw;
     this.lateralNewton = lateralNewton;
+    this.apPropulsionPercentBw = apPropulsionPercentBw;
+    this.apPropulsionNewton = apPropulsionNewton;
+    this.apBrakingPercentBw = apBrakingPercentBw;
+    this.apBrakingNewton = apBrakingNewton;
   }
 }
 
@@ -61,22 +83,34 @@ export class PoseFrameData {
   constructor({
     timestampMs,
     landmarks = {},
+    worldLandmarks = {},
     comX = 0.5,
     comY = 0.5,
+    comZ = 0.0,
     midBaseX = 0.5,
+    midAnkleZ = 0.0,
     baseWidth = 0.2,
     leftBiasPercent = 50.0,
     rightBiasPercent = 50.0,
+    trunkAngleDeg = 0.0,
+    hipAngleDeg = 0.0,
+    kneeAngleDeg = 0.0,
     grf = null
   }) {
     this.timestampMs = timestampMs;
     this.landmarks = landmarks; // Map of index -> Point2D
+    this.worldLandmarks = worldLandmarks; // Map of index -> Point3D (meters)
     this.comX = comX;
     this.comY = comY;
+    this.comZ = comZ;
     this.midBaseX = midBaseX;
+    this.midAnkleZ = midAnkleZ;
     this.baseWidth = baseWidth;
     this.leftBiasPercent = leftBiasPercent;
     this.rightBiasPercent = rightBiasPercent;
+    this.trunkAngleDeg = trunkAngleDeg;
+    this.hipAngleDeg = hipAngleDeg;
+    this.kneeAngleDeg = kneeAngleDeg;
     this.grf = grf;
   }
 }
@@ -111,7 +145,18 @@ export class SingleTrialMetrics {
     peakLateralLeftBwPercent,
     peakLateralLeftNewton,
     peakLateralRightBwPercent,
-    peakLateralRightNewton
+    peakLateralRightNewton,
+    // --- 3D・矢状面 (Sagittal Plane) 新規指標 ---
+    comAnkleApDistanceAtSeatOffCm = 0.0,
+    peakForwardPitchVelocityDegPerSec = 0.0,
+    peakApGrfPropulsionPercentBw = 0.0,
+    peakApGrfPropulsionNewton = 0.0,
+    peakApGrfBrakingPercentBw = 0.0,
+    peakApGrfBrakingNewton = 0.0,
+    maxTrunkFlexionDeg = 0.0,
+    maxHipFlexionDeg = 0.0,
+    kneeRomDeg = 0.0,
+    totalApComExcursionCm = 0.0
   }) {
     this.repIndex = repIndex;
     this.startTimeMs = startTimeMs;
@@ -135,6 +180,17 @@ export class SingleTrialMetrics {
     this.peakLateralLeftNewton = peakLateralLeftNewton;
     this.peakLateralRightBwPercent = peakLateralRightBwPercent;
     this.peakLateralRightNewton = peakLateralRightNewton;
+    // 3D・矢状面
+    this.comAnkleApDistanceAtSeatOffCm = comAnkleApDistanceAtSeatOffCm;
+    this.peakForwardPitchVelocityDegPerSec = peakForwardPitchVelocityDegPerSec;
+    this.peakApGrfPropulsionPercentBw = peakApGrfPropulsionPercentBw;
+    this.peakApGrfPropulsionNewton = peakApGrfPropulsionNewton;
+    this.peakApGrfBrakingPercentBw = peakApGrfBrakingPercentBw;
+    this.peakApGrfBrakingNewton = peakApGrfBrakingNewton;
+    this.maxTrunkFlexionDeg = maxTrunkFlexionDeg;
+    this.maxHipFlexionDeg = maxHipFlexionDeg;
+    this.kneeRomDeg = kneeRomDeg;
+    this.totalApComExcursionCm = totalApComExcursionCm;
   }
 }
 

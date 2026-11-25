@@ -8,6 +8,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Three.js & OrbitControls for 3D Mesh Kinematics -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -231,29 +234,71 @@
     <!-- MAIN INTERACTIVE ANALYSIS WORKSPACE -->
     <div id="analysisWorkspace" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-      <!-- Left Column: Video & Overlay & Immediate Scroller Event Picker (7 Cols) -->
+      <!-- Left Column: Video & Overlay & 3D Mesh Viewer (7 Cols) -->
       <div class="lg:col-span-7 space-y-4">
 
-        <!-- Video & Skeleton Overlay Viewport -->
-        <div class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] flex items-center justify-center">
-          <div id="videoTransformWrapper" class="w-full h-full relative flex items-center justify-center transition-transform duration-200">
-            <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
-            <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
+        <!-- Viewport Header: 2D / 3D / Split Mode Toggle & Camera View Presets -->
+        <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <!-- View Modes -->
+          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+            <button id="viewMode2dBtn" class="px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition">2D動画</button>
+            <button id="viewMode3dBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+              3Dメッシュ
+            </button>
+            <button id="viewModeSplitBtn" class="px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition">並列表示 (2D + 3D)</button>
           </div>
 
-          <!-- Placeholder -->
-          <div id="videoPlaceholder" class="text-center p-8 space-y-3 z-10 pointer-events-none">
-            <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
-              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+          <!-- 3D Camera Angles (Active only when 3D is visible) -->
+          <div id="camPresetButtons" class="flex items-center gap-1 text-[11px]">
+            <span class="text-slate-400 mr-1 font-medium">3D視点:</span>
+            <button id="camSagittalBtn" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition" title="矢状面（側面から前傾・屈伸を観察）">
+              矢状面(側面)
+            </button>
+            <button id="camFrontalBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="前面視（左右偏倚を観察）">
+              前面
+            </button>
+            <button id="camPerspectiveBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="斜め3D鳥瞰">
+              斜め3D
+            </button>
+            <button id="camTopBtn" class="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition" title="上面俯瞰（支持基底面とCoM）">
+              上面
+            </button>
+          </div>
+        </div>
+
+        <!-- Video & 3D Skeleton/Mesh Container -->
+        <div id="viewportsWrapper" class="grid grid-cols-1 gap-3">
+          <!-- 2D Video & Skeleton Overlay Viewport -->
+          <div id="viewport2d" class="bg-slate-900 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] flex items-center justify-center">
+            <div id="videoTransformWrapper" class="w-full h-full relative flex items-center justify-center transition-transform duration-200">
+              <video id="videoElement" playsinline class="max-w-full max-h-full object-contain hidden"></video>
+              <canvas id="overlayCanvas" class="absolute inset-0 w-full h-full object-contain"></canvas>
             </div>
-            <p class="text-slate-300 font-medium text-sm">ステップ2で動画ファイルを選択してください</p>
-            <p class="text-slate-500 text-xs">MediaPipe Pose が立ち座り動作を自動トラッキングします</p>
+
+            <!-- Placeholder -->
+            <div id="videoPlaceholder" class="text-center p-8 space-y-3 z-10 pointer-events-none">
+              <div class="w-16 h-16 mx-auto rounded-full bg-slate-800 text-slate-400 flex items-center justify-center">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+              </div>
+              <p class="text-slate-300 font-medium text-sm">ステップ2で動画ファイルを選択してください</p>
+              <p class="text-slate-500 text-xs">MediaPipe Pose が立ち座り動作を自動トラッキングし3Dメッシュを構築します</p>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div id="analysisLoading" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 hidden z-20">
+              <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <p id="analysisProgressText" class="text-white text-sm font-semibold">動画を解析中... 0%</p>
+            </div>
           </div>
 
-          <!-- Loading Overlay -->
-          <div id="analysisLoading" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center gap-3 hidden z-20">
-            <div class="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p id="analysisProgressText" class="text-white text-sm font-semibold">動画を解析中... 0%</p>
+          <!-- 3D Three.js Mesh Viewport -->
+          <div id="viewport3d" class="bg-slate-950 rounded-2xl overflow-hidden shadow-lg relative aspect-[9/16] sm:aspect-[4/3] max-h-[520px] hidden flex flex-col">
+            <div class="absolute top-3 left-3 z-10 bg-slate-900/80 backdrop-blur px-2.5 py-1 rounded-md text-[11px] text-slate-300 border border-slate-700/60 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>3D生体力学メッシュ (ドラッグ回転 / 右ドラッグ平行移動 / ホイール拡大縮小)</span>
+            </div>
+            <div id="sts3dContainer" class="w-full h-full flex-1 min-h-[300px]"></div>
           </div>
         </div>
 
@@ -437,6 +482,86 @@
           </div>
         </div>
 
+        <!-- Sagittal & 3D Kinematics Metrics Card (矢状面・3D生体力学指標) -->
+        <div id="sagittal3dCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+              3D・矢状面キネマティクス指標 (Sagittal Biomechanics)
+            </h3>
+            <span class="text-[10px] text-indigo-700 bg-indigo-50 font-bold px-2 py-0.5 rounded">3D推定</span>
+          </div>
+
+          <!-- Key Sagittal Metrics Grid -->
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <!-- 1. 離臀時 CoM-足首前後距離 -->
+            <div class="bg-indigo-50/60 p-3 rounded-xl border border-indigo-100">
+              <div class="text-[11px] font-semibold text-indigo-900 flex items-center justify-between">
+                <span>離臀時 CoM-足首前後距離</span>
+                <span class="text-[9px] text-indigo-600 font-normal">支持基底面への近接</span>
+              </div>
+              <div class="mt-1 flex items-baseline gap-1">
+                <span id="dispSeatOffApDist" class="text-lg font-bold text-indigo-800">--</span>
+                <span class="text-xs text-indigo-600 font-semibold">cm</span>
+              </div>
+              <div class="text-[10px] text-indigo-500 mt-0.5">離臀瞬間の身体重心と足部支持位置</div>
+            </div>
+
+            <!-- 2. 前傾速度 (離臀前 最大前傾角速度) -->
+            <div class="bg-amber-50/60 p-3 rounded-xl border border-amber-100">
+              <div class="text-[11px] font-semibold text-amber-900 flex items-center justify-between">
+                <span>最大体幹前傾速度</span>
+                <span class="text-[9px] text-amber-600 font-normal">助走推進力</span>
+              </div>
+              <div class="mt-1 flex items-baseline gap-1">
+                <span id="dispPeakPitchVel" class="text-lg font-bold text-amber-800">--</span>
+                <span class="text-xs text-amber-600 font-semibold">deg/s</span>
+              </div>
+              <div class="text-[10px] text-amber-600 mt-0.5">離臀前の体幹前屈角速度ピーク</div>
+            </div>
+          </div>
+
+          <!-- 3. 前後床反力 (AP-GRF: Anterior-Posterior Ground Reaction Force) -->
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2 text-xs">
+            <div class="flex items-center justify-between text-[11px] font-bold text-slate-800">
+              <span>前後床反力ピーク (AP-GRF)</span>
+              <span class="text-[10px] text-slate-400 font-normal">離臀〜立位完了時</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-blue-600 font-semibold">前方推進ピーク (Propulsion)</div>
+                <div id="dispApPropBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispApPropN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-purple-600 font-semibold">後方制動ピーク (Braking)</div>
+                <div id="dispApBrakeBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispApBrakeN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. 矢状面可動域 (ROM) & 移動量 -->
+          <div class="grid grid-cols-4 gap-2 text-center text-xs">
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">体幹最大前傾</div>
+              <div id="dispMaxTrunkFlex" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">股関節最大屈曲</div>
+              <div id="dispMaxHipFlex" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">膝伸展可動域</div>
+              <div id="dispKneeRom" class="font-bold text-slate-800 mt-0.5">-- °</div>
+            </div>
+            <div class="bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <div class="text-[10px] text-slate-500">前後CoM移動幅</div>
+              <div id="dispApComExcursion" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Cumulative Time Graph Card -->
         <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
@@ -515,9 +640,10 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, FailedAttempt } from "./stsModels.js";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js";
     import { StsMetricCalculator } from "./stsMetrics.js";
     import { StsCsvExporter } from "./stsExporter.js";
+    import { Sts3dViewer } from "./sts3dViewer.js";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -528,6 +654,10 @@
     let analysisResult = null;
     let selectedTrialIdx = 0;
     let rawExtractedFrames = [];
+
+    // 3D Viewer & View Mode State
+    let sts3dViewer = null;
+    let currentViewMode = "2d"; // '2d', '3d', 'split'
 
     // DOM Elements
     const video = document.getElementById("videoElement");
@@ -622,6 +752,86 @@
       }
     }
     initMediaPipe();
+
+    // 3D Viewport DOM Elements & Controls
+    const viewportsWrapper = document.getElementById("viewportsWrapper");
+    const viewport2d = document.getElementById("viewport2d");
+    const viewport3d = document.getElementById("viewport3d");
+    const sts3dContainer = document.getElementById("sts3dContainer");
+
+    const viewMode2dBtn = document.getElementById("viewMode2dBtn");
+    const viewMode3dBtn = document.getElementById("viewMode3dBtn");
+    const viewModeSplitBtn = document.getElementById("viewModeSplitBtn");
+
+    const camSagittalBtn = document.getElementById("camSagittalBtn");
+    const camFrontalBtn = document.getElementById("camFrontalBtn");
+    const camPerspectiveBtn = document.getElementById("camPerspectiveBtn");
+    const camTopBtn = document.getElementById("camTopBtn");
+
+    // Initialize 3D Viewer
+    try {
+      if (sts3dContainer && window.THREE) {
+        sts3dViewer = new Sts3dViewer(sts3dContainer);
+      }
+    } catch (e) {
+      console.warn("Failed to initialize 3D viewer:", e);
+    }
+
+    // View Mode Toggle Logic
+    function setViewMode(mode) {
+      currentViewMode = mode;
+      const activeClass = "px-3 py-1.5 rounded-lg bg-white font-bold text-slate-800 shadow-xs transition";
+      const inactiveClass = "px-3 py-1.5 rounded-lg text-slate-600 font-semibold hover:text-slate-900 transition";
+
+      viewMode2dBtn.className = mode === "2d" ? activeClass : inactiveClass;
+      viewMode3dBtn.className = (mode === "3d" ? activeClass : inactiveClass) + " flex items-center gap-1.5";
+      viewModeSplitBtn.className = mode === "split" ? activeClass : inactiveClass;
+
+      if (mode === "2d") {
+        viewport2d.classList.remove("hidden");
+        viewport3d.classList.add("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 gap-3";
+      } else if (mode === "3d") {
+        viewport2d.classList.add("hidden");
+        viewport3d.classList.remove("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 gap-3";
+        if (sts3dViewer) sts3dViewer.onResize();
+      } else if (mode === "split") {
+        viewport2d.classList.remove("hidden");
+        viewport3d.classList.remove("hidden");
+        viewportsWrapper.className = "grid grid-cols-1 md:grid-cols-2 gap-3";
+        if (sts3dViewer) sts3dViewer.onResize();
+      }
+    }
+
+    viewMode2dBtn.onclick = () => setViewMode("2d");
+    viewMode3dBtn.onclick = () => setViewMode("3d");
+    viewModeSplitBtn.onclick = () => setViewMode("split");
+
+    // 3D Camera Preset Buttons
+    function setCamPresetActive(activeBtn) {
+      [camSagittalBtn, camFrontalBtn, camPerspectiveBtn, camTopBtn].forEach(btn => {
+        btn.className = "px-2 py-1 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition";
+      });
+      activeBtn.className = "px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition";
+    }
+
+    camSagittalBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("sagittal");
+      setCamPresetActive(camSagittalBtn);
+    };
+    camFrontalBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("frontal");
+      setCamPresetActive(camFrontalBtn);
+    };
+    camPerspectiveBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("perspective");
+      setCamPresetActive(camPerspectiveBtn);
+    };
+    camTopBtn.onclick = () => {
+      if (sts3dViewer) sts3dViewer.setCameraView("top");
+      setCamPresetActive(camTopBtn);
+    };
 
     // Mode Selection Handling
     modeRadios.forEach(radio => {
@@ -776,9 +986,17 @@
           });
         }
 
+        const worldLmMap = {};
+        if (result.worldLandmarks && result.worldLandmarks[0]) {
+          result.worldLandmarks[0].forEach((wlm, idx) => {
+            worldLmMap[idx] = new Point3D(wlm.x, wlm.y, wlm.z, wlm.visibility);
+          });
+        }
+
         rawExtractedFrames.push(new PoseFrameData({
           timestampMs: timeMs,
-          landmarks: lmMap
+          landmarks: lmMap,
+          worldLandmarks: worldLmMap
         }));
 
         if (i % 8 === 0) {
@@ -812,6 +1030,10 @@
         customThirtySecReps: custom30s
       });
 
+      if (sts3dViewer) {
+        sts3dViewer.loadFrames(analysisResult.frames);
+      }
+
       exportCsvBtn.disabled = false;
       openReportBtn.disabled = false;
       renderReport();
@@ -819,6 +1041,36 @@
       renderTrialTabs();
       renderFailedAttemptsList();
       drawCurrentOverlay();
+    }
+
+    function updateSagittal3dCard(trial) {
+      if (!trial) {
+        document.getElementById("dispSeatOffApDist").innerText = "--";
+        document.getElementById("dispPeakPitchVel").innerText = "--";
+        document.getElementById("dispApPropBw").innerText = "-- %BW";
+        document.getElementById("dispApPropN").innerText = "(-- N)";
+        document.getElementById("dispApBrakeBw").innerText = "-- %BW";
+        document.getElementById("dispApBrakeN").innerText = "(-- N)";
+        document.getElementById("dispMaxTrunkFlex").innerText = "-- °";
+        document.getElementById("dispMaxHipFlex").innerText = "-- °";
+        document.getElementById("dispKneeRom").innerText = "-- °";
+        document.getElementById("dispApComExcursion").innerText = "-- cm";
+        return;
+      }
+
+      document.getElementById("dispSeatOffApDist").innerText = (trial.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1);
+      document.getElementById("dispPeakPitchVel").innerText = (trial.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(1);
+
+      document.getElementById("dispApPropBw").innerText = `${(trial.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispApPropN").innerText = `(${(trial.peakApGrfPropulsionNewton ?? 0).toFixed(0)} N)`;
+
+      document.getElementById("dispApBrakeBw").innerText = `${(trial.peakApGrfBrakingPercentBw ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispApBrakeN").innerText = `(${(trial.peakApGrfBrakingNewton ?? 0).toFixed(0)} N)`;
+
+      document.getElementById("dispMaxTrunkFlex").innerText = `${(trial.maxTrunkFlexionDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispMaxHipFlex").innerText = `${(trial.maxHipFlexionDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispKneeRom").innerText = `${(trial.kneeRomDeg ?? 0).toFixed(1)} °`;
+      document.getElementById("dispApComExcursion").innerText = `${(trial.totalApComExcursionCm ?? 0).toFixed(1)} cm`;
     }
 
     // Trial Tabs & Timing Displays
@@ -860,6 +1112,7 @@
       dispSeatTime.innerText = (trial.seatOffTimeMs / 1000.0).toFixed(2) + "s";
       dispEndTime.innerText = (trial.standEndTimeMs / 1000.0).toFixed(2) + "s";
       dispStableTime.innerText = (trial.stableTimeMs / 1000.0).toFixed(2) + "s";
+      updateSagittal3dCard(trial);
     }
 
     function clearTimingDisplays() {
@@ -867,6 +1120,7 @@
       dispSeatTime.innerText = "-- s";
       dispEndTime.innerText = "-- s";
       dispStableTime.innerText = "-- s";
+      updateSagittal3dCard(null);
     }
 
     // Jumping to Specific Timings in Video
@@ -1174,7 +1428,7 @@
       drawCurrentOverlay();
     };
 
-    // Draw Skeleton, CoM, and BoS on Overlay Canvas
+    // Draw Skeleton, CoM, and BoS on Overlay Canvas & Update 3D Viewport
     function drawCurrentOverlay() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!analysisResult || analysisResult.frames.length === 0) return;
@@ -1182,6 +1436,11 @@
       const currentMs = Math.round(video.currentTime * 1000.0);
       const frame = StsMetricCalculator.nearestFrame(analysisResult.frames, currentMs);
       if (!frame) return;
+
+      // Update 3D Mesh & Skeleton Model in Three.js Scene
+      if (sts3dViewer) {
+        sts3dViewer.updateFrame(frame);
+      }
 
       // Update Phase Badge and Live Numbers
       const activePhase = StsCsvExporter.resolveActivePhase(
@@ -1347,14 +1606,17 @@
       if (currentReportOrientation === "landscape") {
         // Build Table Rows for Landscape
         const tableRowsHtml = trials.map(t => `
-          <tr class="border-b border-slate-100 hover:bg-slate-50/50 text-center text-[10.5px]">
-            <td class="py-1 px-1.5 font-bold">${t.repIndex}</td>
-            <td class="py-1 px-1 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
-            <td class="py-1 px-1 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
-            <td class="py-1 px-1 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
-            <td class="py-1 px-1 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
-            <td class="py-1 px-1 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW <span class="text-[9px] text-slate-400 font-normal">(${t.peakVerticalNewton.toFixed(0)}N)</span></td>
-            <td class="py-1 px-1.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50/50 text-center text-[10px]">
+            <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px]">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px] text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9.5px] text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW</td>
+            <td class="py-0.5 px-0.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+            <td class="py-0.5 px-0.5 font-bold text-indigo-700 font-mono">${(t.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1)}cm</td>
+            <td class="py-0.5 px-0.5 font-bold text-amber-700 font-mono">${(t.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(0)}°/s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9px] text-slate-700">${(t.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)}% / ${(t.peakApGrfBrakingPercentBw ?? 0).toFixed(0)}%</td>
           </tr>
         `).join("");
 
@@ -1363,52 +1625,178 @@
         // ==========================================
         a4PrintContainer.innerHTML = `
           <!-- Report Header -->
-          <div class="border-b-2 border-slate-800 pb-1.5 flex justify-between items-end">
+          <div class="border-b-2 border-slate-800 pb-1 flex justify-between items-end">
             <div>
-              <h1 class="text-lg font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート</h1>
-              <p class="text-[11px] text-slate-500 font-medium">Sit-to-Stand (STS) Biomechanical Motion Analysis Report</p>
+              <h1 class="text-base font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート (STS Analysis Report)</h1>
+              <p class="text-[10px] text-slate-500 font-medium">Sit-to-Stand Biomechanical Motion & 3D Sagittal Kinematics Report 【A4横長】</p>
             </div>
-            <div class="text-right text-[11px] text-slate-600 leading-tight">
+            <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>解析システム:</strong> STS Analyzer (Web/PWA)</div>
+              <div><strong>システム:</strong> STS Web Analyzer (MediaPipe 3D)</div>
             </div>
           </div>
 
           <!-- Meta Row: Subject & Protocol Information + Overall Key Metrics -->
-          <div class="grid grid-cols-12 gap-3 text-xs">
-            <!-- Subject Info (5 cols) -->
-            <div class="col-span-5 bg-slate-50 border border-slate-200 rounded-lg p-2.5 grid grid-cols-2 gap-x-3 gap-y-1">
+          <div class="grid grid-cols-12 gap-2 text-xs">
+            <!-- Subject Info (4 cols) -->
+            <div class="col-span-4 bg-slate-50 border border-slate-200 rounded-lg p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10.5px]">
               <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
-              <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(左右反転)" : "正面/背面(正像)"}</strong></div>
+              <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(反転補正)" : "正面(正像)"}</strong></div>
               <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
               <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
             </div>
-            <!-- Overall Summary Metrics (7 cols) -->
-            <div class="col-span-7 grid grid-cols-4 gap-2 text-center">
-              <div class="p-2 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
-                <div class="text-[10px] text-slate-500">${is30s ? "30秒内回数" : "トータル所要時間"}</div>
-                <div class="text-sm font-extrabold text-slate-900 mt-0.5">
-                  ${is30s ? res.thirtySecCompletedCount + " <span class='text-xs font-normal'>回</span>" : (totalSec != null ? totalSec.toFixed(2) + " <span class='text-xs font-normal'>s</span>" : "--")}
+            <!-- Overall Summary Metrics (8 cols - 5 cards) -->
+            <div class="col-span-8 grid grid-cols-5 gap-1.5 text-center">
+              <div class="p-1.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[9.5px] text-slate-500">${is30s ? "30秒内回数" : "トータル所要時間"}</div>
+                <div class="text-xs font-extrabold text-slate-900 mt-0.5">
+                  ${is30s ? res.thirtySecCompletedCount + " <span class='text-[10px] font-normal'>回</span>" : (totalSec != null ? totalSec.toFixed(2) + " <span class='text-[10px] font-normal'>s</span>" : "--")}
                 </div>
               </div>
-              <div class="p-2 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
-                <div class="text-[10px] text-slate-500">試行成績</div>
-                <div class="text-sm font-extrabold text-slate-800 mt-0.5">${trials.length} / ${totalAttempts} <span class="text-[10px] text-slate-500 font-normal">(${sRate}%)</span></div>
+              <div class="p-1.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col justify-center">
+                <div class="text-[9.5px] text-slate-500">試行成績</div>
+                <div class="text-xs font-extrabold text-slate-800 mt-0.5">${trials.length} / ${totalAttempts} <span class="text-[9px] text-slate-500 font-normal">(${sRate}%)</span></div>
               </div>
-              <div class="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 flex flex-col justify-center">
-                <div class="text-[10px] text-rose-600 font-medium">離臀失敗数 / 確率</div>
-                <div class="text-sm font-extrabold mt-0.5">${fails.length} <span class="text-xs font-normal">回</span> <span class="text-[10px] font-normal">(${fRate}%)</span></div>
+              <div class="p-1.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 flex flex-col justify-center">
+                <div class="text-[9.5px] text-rose-600 font-medium">離臀失敗数 / 確率</div>
+                <div class="text-xs font-extrabold mt-0.5">${fails.length} <span class="text-[10px] font-normal">回</span> <span class="text-[9px] font-normal">(${fRate}%)</span></div>
               </div>
-              <div class="p-2 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex flex-col justify-center">
-                <div class="text-[10px] text-blue-600 font-medium">離臀〜完了間 最大床反力</div>
-                <div class="text-sm font-extrabold mt-0.5">
-                  ${trials.length > 0 ? Math.max(...trials.map(t => t.peakVerticalBwPercent)).toFixed(0) + " <span class='text-xs font-normal'>%BW</span>" : "--"}
+              <div class="p-1.5 bg-blue-50 border border-blue-200 rounded-lg text-blue-900 flex flex-col justify-center">
+                <div class="text-[9.5px] text-blue-600 font-medium">離臀〜完了 最大床反力</div>
+                <div class="text-xs font-extrabold mt-0.5">
+                  ${trials.length > 0 ? Math.max(...trials.map(t => t.peakVerticalBwPercent)).toFixed(0) + " <span class='text-[10px] font-normal'>%BW</span>" : "--"}
+                </div>
+              </div>
+              <div class="p-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-indigo-900 flex flex-col justify-center">
+                <div class="text-[9.5px] text-indigo-600 font-medium">離臀時 CoM-足首距離</div>
+                <div class="text-xs font-extrabold mt-0.5">
+                  ${targetTrial ? (targetTrial.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1) + " <span class='text-[10px] font-normal'>cm</span>" : "--"}
                 </div>
               </div>
             </div>
           </div>
 
           <!-- Main Section: Left Column (Visual Biomechanics) & Right Column (Metrics & Clinical Assessment) -->
+          <div class="grid grid-cols-2 gap-3 items-stretch">
+            <!-- Left Column: Stick Picture + Trend Graphs -->
+            <div class="flex flex-col justify-between space-y-2">
+              <!-- Stick Picture -->
+              <div class="space-y-0.5">
+                <div class="flex justify-between items-center text-[10.5px]">
+                  <h2 class="font-bold text-slate-900 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                    動作シークエンス スティックピクチャ (代表試行: ${targetTrial ? targetTrial.repIndex + "回目" : "-"})
+                    ${res.isFrontCameraMirrored ? '<span class="text-[9px] bg-amber-100 text-amber-800 font-medium px-1 py-0.2 rounded">反転補正済</span>' : ''}
+                  </h2>
+                  <span class="text-[9.5px] text-slate-500 font-medium">●黄:CoM / ●緑:支持面 / 破線:床面</span>
+                </div>
+                <div class="bg-slate-950 rounded-lg p-1 flex justify-center shadow-inner">
+                  <canvas id="stickPictureCanvas" width="520" height="120" class="w-full max-h-[120px]"></canvas>
+                </div>
+              </div>
+
+              <!-- Trend Graphs (2 Side-by-Side inside Left Column) -->
+              <div class="grid grid-cols-2 gap-2 pt-0.5">
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 各回累積時間 & 立ち上がり時間 (s)</div>
+                  ${cumChartImg ? `<img src="${cumChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+                <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
+                  <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 重心左右偏倚推移 (50%正中基準)</div>
+                  ${biasChartImg ? `<img src="${biasChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
+            <div class="flex flex-col justify-between space-y-2">
+              <!-- Repetition Breakdown Table -->
+              <div class="space-y-0.5">
+                <h2 class="text-[10.5px] font-bold text-slate-900 flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
+                  各回生体力学メトリクス一覧 (3D & 矢状面指標を含む)
+                </h2>
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                  <table class="w-full text-[9.5px] border-collapse">
+                    <thead>
+                      <tr class="bg-slate-100 text-slate-700 border-b border-slate-200 text-[9px] font-bold">
+                        <th class="py-0.5 px-1 text-center">回</th>
+                        <th class="py-0.5 px-0.5 text-center">開始</th>
+                        <th class="py-0.5 px-0.5 text-center">離臀</th>
+                        <th class="py-0.5 px-0.5 text-center">完了</th>
+                        <th class="py-0.5 px-0.5 text-center">時間</th>
+                        <th class="py-0.5 px-0.5 text-center">鉛直GRF</th>
+                        <th class="py-0.5 px-0.5 text-center">左右偏倚</th>
+                        <th class="py-0.5 px-0.5 text-center text-indigo-700">離臀前後距離</th>
+                        <th class="py-0.5 px-0.5 text-center text-amber-700">前傾角速度</th>
+                        <th class="py-0.5 px-0.5 text-center text-slate-700">AP床反力(推/制)</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                      ${tableRowsHtml}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Clinical Observation & Signature Block -->
+              <div class="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70 grid grid-cols-3 gap-2.5 flex-1 flex flex-col justify-between">
+                <div class="col-span-2 flex flex-col justify-between space-y-1.5">
+                  <span class="text-[9.5px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
+                  <div class="space-y-2.5 flex-1 pt-0.5">
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                    <div class="border-b border-dashed border-slate-300"></div>
+                  </div>
+                </div>
+                <div class="flex flex-col justify-between space-y-1 border-l border-slate-200 pl-2.5">
+                  <span class="text-[9.5px] font-bold text-slate-600">【評価担当者 署名】</span>
+                  <div class="h-16 border-b border-dashed border-slate-300 flex items-end justify-center pb-0.5 text-slate-300 text-[9px]">印・サイン</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      } else {
+        // Build Table Rows for Portrait
+        const tableRowsHtml = trials.map(t => `
+          <tr class="border-b border-slate-200 text-center text-[9.5px]">
+            <td class="py-0.5 px-1 font-bold">${t.repIndex}</td>
+            <td class="py-0.5 px-0.5 font-mono">${(t.startTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-orange-700">${(t.seatOffTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-mono text-emerald-700">${(t.standEndTimeMs / 1000).toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold font-mono">${t.totalDurationSec.toFixed(2)}s</td>
+            <td class="py-0.5 px-0.5 font-bold text-blue-700 font-mono">${t.peakVerticalBwPercent.toFixed(0)}%BW</td>
+            <td class="py-0.5 px-0.5 font-mono ${t.meanLeftBiasPercent > 50.5 ? 'text-blue-600' : t.meanLeftBiasPercent < 49.5 ? 'text-orange-600' : 'text-slate-600'}">${t.meanLeftBiasPercent.toFixed(1)}%</td>
+            <td class="py-0.5 px-0.5 font-bold text-indigo-700 font-mono">${(t.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1)}cm</td>
+            <td class="py-0.5 px-0.5 font-bold text-amber-700 font-mono">${(t.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(0)}°/s</td>
+            <td class="py-0.5 px-0.5 font-mono text-[9px]">${(t.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)}% / ${(t.peakApGrfBrakingPercentBw ?? 0).toFixed(0)}%</td>
+          </tr>
+        `).join("");
+
+        // ==========================================
+        // PORTRAIT (A4縦長) Layout
+        // ==========================================
+        a4PrintContainer.innerHTML = `
+          <!-- Report Header -->
+          <div class="border-b-2 border-slate-800 pb-1 flex justify-between items-end">
+            <div>
+              <h1 class="text-base font-extrabold tracking-tight text-slate-900 leading-tight">立ち座り生体力学動作解析 レポート</h1>
+              <p class="text-[10px] text-slate-500 font-medium">Sit-to-Stand (STS) Biomechanical Motion Analysis Report 【A4縦長】</p>
+            </div>
+            <div class="text-right text-[10px] text-slate-600 leading-tight">
+              <div><strong>解析日時:</strong> ${nowStr}</div>
+              <div><strong>解析システム:</strong> STS Analyzer (Web/PWA)</div>
+            </div>
+          </div>
+
+          <!-- Subject & Protocol Information Bar -->
+          <div class="bg-slate-50 border border-slate-200 rounded-md p-1.5 grid grid-cols-4 gap-1 text-[10px]">
+            <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
+            <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
+            <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
+            <div><span class="text-slate-500">カメラ配置:</span> <strong>${res.isFrontCameraMirrored ? "前面(反転)" : "正面/背面(正像)"}</strong></div>
+          </div>
           <div class="grid grid-cols-2 gap-3.5 items-stretch">
             <!-- Left Column: Stick Picture + Trend Graphs -->
             <div class="flex flex-col justify-between space-y-2.5">

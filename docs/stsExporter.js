@@ -71,7 +71,18 @@ export class StsCsvExporter {
       "PeakLateralLeft_pctBW",
       "PeakLateralLeft_N",
       "PeakLateralRight_pctBW",
-      "PeakLateralRight_N"
+      "PeakLateralRight_N",
+      // 3D・矢状面指標
+      "SeatOff_CoM_Ankle_AP_Dist_cm",
+      "Peak_Forward_Pitch_Vel_deg_per_s",
+      "Peak_AP_Propulsion_pctBW",
+      "Peak_AP_Propulsion_N",
+      "Peak_AP_Braking_pctBW",
+      "Peak_AP_Braking_N",
+      "Max_Trunk_Flexion_deg",
+      "Max_Hip_Flexion_deg",
+      "Knee_ROM_deg",
+      "Total_AP_CoM_Excursion_cm"
     ];
     sb.push(summaryHeaders.join(","));
 
@@ -102,14 +113,25 @@ export class StsCsvExporter {
         t.peakLateralLeftBwPercent.toFixed(1),
         t.peakLateralLeftNewton.toFixed(1),
         t.peakLateralRightBwPercent.toFixed(1),
-        t.peakLateralRightNewton.toFixed(1)
+        t.peakLateralRightNewton.toFixed(1),
+        // 3D・矢状面
+        (t.comAnkleApDistanceAtSeatOffCm ?? 0).toFixed(1),
+        (t.peakForwardPitchVelocityDegPerSec ?? 0).toFixed(1),
+        (t.peakApGrfPropulsionPercentBw ?? 0).toFixed(1),
+        (t.peakApGrfPropulsionNewton ?? 0).toFixed(1),
+        (t.peakApGrfBrakingPercentBw ?? 0).toFixed(1),
+        (t.peakApGrfBrakingNewton ?? 0).toFixed(1),
+        (t.maxTrunkFlexionDeg ?? 0).toFixed(1),
+        (t.maxHipFlexionDeg ?? 0).toFixed(1),
+        (t.kneeRomDeg ?? 0).toFixed(1),
+        (t.totalApComExcursionCm ?? 0).toFixed(1)
       ];
       sb.push(row.join(","));
     }
 
     // 平均値行
     if (trials.length > 1) {
-      const avg = fn => (trials.reduce((sum, t) => sum + fn(t), 0) / trials.length).toFixed(3);
+      const avg = fn => (trials.reduce((sum, t) => sum + (fn(t) || 0), 0) / trials.length).toFixed(3);
       const avgRow = [
         "Average",
         "-", "-", "-",
@@ -131,7 +153,17 @@ export class StsCsvExporter {
         avg(t => t.peakLateralLeftBwPercent),
         avg(t => t.peakLateralLeftNewton),
         avg(t => t.peakLateralRightBwPercent),
-        avg(t => t.peakLateralRightNewton)
+        avg(t => t.peakLateralRightNewton),
+        avg(t => t.comAnkleApDistanceAtSeatOffCm),
+        avg(t => t.peakForwardPitchVelocityDegPerSec),
+        avg(t => t.peakApGrfPropulsionPercentBw),
+        avg(t => t.peakApGrfPropulsionNewton),
+        avg(t => t.peakApGrfBrakingPercentBw),
+        avg(t => t.peakApGrfBrakingNewton),
+        avg(t => t.maxTrunkFlexionDeg),
+        avg(t => t.maxHipFlexionDeg),
+        avg(t => t.kneeRomDeg),
+        avg(t => t.totalApComExcursionCm)
       ];
       sb.push(avgRow.join(","));
     }
@@ -145,17 +177,26 @@ export class StsCsvExporter {
       "PhaseName",
       "CoM_X",
       "CoM_Y",
+      "CoM_Z_m",
       "MidBase_X",
+      "MidAnkle_Z_m",
       "BaseWidth",
       "LeftBias_pct",
       "RightBias_pct",
+      "TrunkAngle_deg",
+      "HipAngle_deg",
+      "KneeAngle_deg",
       "Vertical_pctBW",
       "Vertical_N",
       "Lateral_pctBW",
-      "Lateral_N"
+      "Lateral_N",
+      "AP_Propulsion_pctBW",
+      "AP_Propulsion_N",
+      "AP_Braking_pctBW",
+      "AP_Braking_N"
     ];
     for (let i = 0; i < 33; i++) {
-      frameHeaders.push(`LM${i}_X`, `LM${i}_Y`);
+      frameHeaders.push(`LM${i}_X`, `LM${i}_Y`, `LM3D_${i}_X`, `LM3D_${i}_Y`, `LM3D_${i}_Z`);
     }
     sb.push(frameHeaders.join(","));
 
@@ -168,18 +209,34 @@ export class StsCsvExporter {
         activePhase.phase,
         f.comX.toFixed(4),
         f.comY.toFixed(4),
+        (f.comZ ?? 0).toFixed(4),
         f.midBaseX.toFixed(4),
+        (f.midAnkleZ ?? 0).toFixed(4),
         f.baseWidth.toFixed(4),
         f.leftBiasPercent.toFixed(1),
         f.rightBiasPercent.toFixed(1),
+        (f.trunkAngleDeg ?? 0).toFixed(1),
+        (f.hipAngleDeg ?? 0).toFixed(1),
+        (f.kneeAngleDeg ?? 0).toFixed(1),
         f.grf ? f.grf.verticalPercentBw.toFixed(1) : "100.0",
         f.grf ? f.grf.verticalNewton.toFixed(1) : "0.0",
         f.grf ? f.grf.lateralPercentBw.toFixed(1) : "0.0",
-        f.grf ? f.grf.lateralNewton.toFixed(1) : "0.0"
+        f.grf ? f.grf.lateralNewton.toFixed(1) : "0.0",
+        f.grf ? f.grf.apPropulsionPercentBw.toFixed(1) : "0.0",
+        f.grf ? f.grf.apPropulsionNewton.toFixed(1) : "0.0",
+        f.grf ? f.grf.apBrakingPercentBw.toFixed(1) : "0.0",
+        f.grf ? f.grf.apBrakingNewton.toFixed(1) : "0.0"
       ];
       for (let i = 0; i < 33; i++) {
         const pt = f.landmarks[i];
-        row.push(pt ? pt.x.toFixed(4) : "", pt ? pt.y.toFixed(4) : "");
+        const wpt = f.worldLandmarks ? f.worldLandmarks[i] : null;
+        row.push(
+          pt ? pt.x.toFixed(4) : "",
+          pt ? pt.y.toFixed(4) : "",
+          wpt ? wpt.x.toFixed(4) : "",
+          wpt ? wpt.y.toFixed(4) : "",
+          wpt ? wpt.z.toFixed(4) : ""
+        );
       }
       sb.push(row.join(","));
     }

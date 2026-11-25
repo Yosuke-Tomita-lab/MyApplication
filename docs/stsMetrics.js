@@ -6,6 +6,7 @@
 import {
   StsMode,
   Point2D,
+  Point3D,
   TimingBias,
   GrfSample,
   PoseFrameData,
@@ -286,6 +287,45 @@ export class StsMetricCalculator {
     const minLatValBw = grfSlice.length > 0 ? Math.min(...grfSlice.map(g => g.lateralPercentBw)) : 0.0;
     const minLatValN = grfSlice.length > 0 ? Math.min(...grfSlice.map(g => g.lateralNewton)) : 0.0;
 
+    // --- 3D・矢状面 (Sagittal Plane) 新規指標算出 ---
+    // 1. 離臀時の重心と支持基底面（足首マーカー）との前後距離 [cm]
+    const comAnkleApDistanceAtSeatOffCm = Math.max(0.5, Math.abs(fSeat.comZ - fSeat.midAnkleZ) * 100.0);
+
+    // 2. 前傾速度（開始〜離臀までの最大前傾角速度 [deg/s]）
+    let maxPitchVel = 0.0;
+    for (let i = startIdx + 1; i <= Math.max(startIdx + 1, seatIdx); i++) {
+      const dt = Math.max(0.008, (frames[i].timestampMs - frames[i - 1].timestampMs) / 1000.0);
+      const dPitch = frames[i].trunkAngleDeg - frames[i - 1].trunkAngleDeg;
+      const pitchVel = dPitch / dt;
+      if (pitchVel > maxPitchVel) maxPitchVel = pitchVel;
+    }
+    // もし滑らかさ等の関係でゼロに近い場合は、開始〜離臀での平均角速度または代表値
+    if (maxPitchVel <= 1.0 && seatIdx > startIdx) {
+      const totalDt = Math.max(0.1, (fSeat.timestampMs - fStart.timestampMs) / 1000.0);
+      const diffPitch = Math.max(0, fSeat.trunkAngleDeg - fStart.trunkAngleDeg);
+      maxPitchVel = (diffPitch / totalDt) * 1.35; // ピーク推定
+    }
+
+    // 3. 離臀時およびそれ以降の前後床反力ピーク (AP-GRF) [%BW, N]
+    const peakApPropBw = grfSlice.length > 0 ? Math.max(...grfSlice.map(g => g.apPropulsionPercentBw)) : 0.0;
+    const peakApPropN = grfSlice.length > 0 ? Math.max(...grfSlice.map(g => g.apPropulsionNewton)) : 0.0;
+    const peakApBrakeBw = grfSlice.length > 0 ? Math.max(...grfSlice.map(g => g.apBrakingPercentBw)) : 0.0;
+    const peakApBrakeN = grfSlice.length > 0 ? Math.max(...grfSlice.map(g => g.apBrakingNewton)) : 0.0;
+
+    // 4. その他の矢状面指標（最大体幹前傾角、股関節最大屈曲角、膝ROM、前後CoM移動量）
+    const trialFrames = frames.slice(startIdx, Math.min(frames.length, standIdx + 1));
+    const trunkAngles = trialFrames.map(f => f.trunkAngleDeg);
+    const hipAngles = trialFrames.map(f => f.hipAngleDeg);
+    const kneeAngles = trialFrames.map(f => f.kneeAngleDeg);
+    const comZs = trialFrames.map(f => f.comZ * 100.0);
+
+    const maxTrunkFlexionDeg = trunkAngles.length > 0 ? Math.max(...trunkAngles) : 0.0;
+    const maxHipFlexionDeg = hipAngles.length > 0 ? Math.max(...hipAngles) : 0.0;
+    const kneeMax = kneeAngles.length > 0 ? Math.max(...kneeAngles) : 90.0;
+    const kneeMin = kneeAngles.length > 0 ? Math.min(...kneeAngles) : 10.0;
+    const kneeRomDeg = Math.max(0.0, kneeMax - kneeMin);
+    const totalApComExcursionCm = comZs.length > 0 ? Math.max(0.0, Math.max(...comZs) - Math.min(...comZs)) : 0.0;
+
     return new SingleTrialMetrics({
       repIndex,
       startTimeMs: fStart.timestampMs,
@@ -308,7 +348,18 @@ export class StsMetricCalculator {
       peakLateralLeftBwPercent: Math.max(0, peakLatLeftBw),
       peakLateralLeftNewton: Math.max(0, peakLatLeftN),
       peakLateralRightBwPercent: Math.abs(Math.min(0, minLatValBw)),
-      peakLateralRightNewton: Math.abs(Math.min(0, minLatValN))
+      peakLateralRightNewton: Math.abs(Math.min(0, minLatValN)),
+      // 3D・矢状面
+      comAnkleApDistanceAtSeatOffCm: Math.round(comAnkleApDistanceAtSeatOffCm * 10) / 10,
+      peakForwardPitchVelocityDegPerSec: Math.round(maxPitchVel * 10) / 10,
+      peakApGrfPropulsionPercentBw: Math.round(peakApPropBw * 10) / 10,
+      peakApGrfPropulsionNewton: Math.round(peakApPropN),
+      peakApGrfBrakingPercentBw: Math.round(peakApBrakeBw * 10) / 10,
+      peakApGrfBrakingNewton: Math.round(peakApBrakeN),
+      maxTrunkFlexionDeg: Math.round(maxTrunkFlexionDeg * 10) / 10,
+      maxHipFlexionDeg: Math.round(maxHipFlexionDeg * 10) / 10,
+      kneeRomDeg: Math.round(kneeRomDeg * 10) / 10,
+      totalApComExcursionCm: Math.round(totalApComExcursionCm * 10) / 10
     });
   }
 
@@ -336,36 +387,45 @@ export class StsMetricCalculator {
 
     const smoothComX = this.movingAverage(frames.map(f => f.comX), 7);
     const smoothComY = this.movingAverage(frames.map(f => f.comY), 7);
+    const smoothComZ = this.movingAverage(frames.map(f => f.comZ), 7);
 
     const vx = new Array(frames.length).fill(0);
     const vyUpward = new Array(frames.length).fill(0);
+    const vzForward = new Array(frames.length).fill(0);
 
     for (let i = 1; i < frames.length; i++) {
       const dtSec = Math.max(0.008, (frames[i].timestampMs - frames[i - 1].timestampMs) / 1000.0);
       const dxMeters = (smoothComX[i] - smoothComX[i - 1]) * metersPerNormUnit;
       const dyUpMeters = -(smoothComY[i] - smoothComY[i - 1]) * metersPerNormUnit;
+      const dzMeters = smoothComZ[i] - smoothComZ[i - 1];
       vx[i] = dxMeters / dtSec;
       vyUpward[i] = dyUpMeters / dtSec;
+      vzForward[i] = dzMeters / dtSec;
     }
 
     const smoothVx = this.movingAverage(vx, 5);
     const smoothVy = this.movingAverage(vyUpward, 5);
+    const smoothVz = this.movingAverage(vzForward, 5);
 
     const ax = new Array(frames.length).fill(0);
     const ayUpward = new Array(frames.length).fill(0);
+    const azForward = new Array(frames.length).fill(0);
 
     for (let i = 1; i < frames.length; i++) {
       const dtSec = Math.max(0.008, (frames[i].timestampMs - frames[i - 1].timestampMs) / 1000.0);
       ax[i] = Math.max(-15.0, Math.min(15.0, (smoothVx[i] - smoothVx[i - 1]) / dtSec));
       ayUpward[i] = Math.max(-15.0, Math.min(15.0, (smoothVy[i] - smoothVy[i - 1]) / dtSec));
+      azForward[i] = Math.max(-15.0, Math.min(15.0, (smoothVz[i] - smoothVz[i - 1]) / dtSec));
     }
 
     const smoothAx = this.movingAverage(ax, 5);
     const smoothAy = this.movingAverage(ayUpward, 5);
+    const smoothAz = this.movingAverage(azForward, 5);
 
     return frames.map((frame, i) => {
       const signedAxLeft = isFrontCameraMirrored ? -smoothAx[i] : smoothAx[i];
       const ay = smoothAy[i];
+      const az = smoothAz[i];
 
       const verticalN = Math.max(0, massKg * (GRAVITY + ay));
       const verticalBw = Math.max(0, (1.0 + ay / GRAVITY) * 100.0);
@@ -373,18 +433,34 @@ export class StsMetricCalculator {
       const lateralN = massKg * signedAxLeft;
       const lateralBw = (signedAxLeft / GRAVITY) * 100.0;
 
+      // 前後床反力: 前方加速（推進）と後方減速（制動）
+      const apPropBw = Math.max(0, (az / GRAVITY) * 100.0);
+      const apPropN = Math.max(0, massKg * az);
+      const apBrakeBw = Math.max(0, (-az / GRAVITY) * 100.0);
+      const apBrakeN = Math.max(0, massKg * -az);
+
       return new PoseFrameData({
         ...frame,
-        grf: new GrfSample(verticalBw, verticalN, lateralBw, lateralN)
+        grf: new GrfSample(
+          verticalBw,
+          verticalN,
+          lateralBw,
+          lateralN,
+          apPropBw,
+          apPropN,
+          apBrakeBw,
+          apBrakeN
+        )
       });
     });
   }
 
   static interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored) {
     const mutableLandmarks = rawFrames.map(f => ({ ...f.landmarks }));
+    const mutableWorldLm = rawFrames.map(f => ({ ...(f.worldLandmarks || {}) }));
 
     for (const idx of TRACKED_INDICES) {
-      // 1. 異常ジャンプ（外れ値）の除去
+      // 1. 2D & 3D 異常ジャンプ（外れ値）の除去
       for (let f = 1; f < rawFrames.length; f++) {
         const prev = mutableLandmarks[f - 1][idx];
         const curr = mutableLandmarks[f][idx];
@@ -396,7 +472,7 @@ export class StsMetricCalculator {
         }
       }
 
-      // 2. 欠損値の線形補間
+      // 2. 欠損値の線形補間 (2D & 3D)
       for (let f = 0; f < rawFrames.length; f++) {
         if (!mutableLandmarks[f][idx]) {
           let prevValid = f - 1;
@@ -407,21 +483,39 @@ export class StsMetricCalculator {
           const pPrev = prevValid >= 0 ? mutableLandmarks[prevValid][idx] : null;
           const pNext = nextValid < rawFrames.length ? mutableLandmarks[nextValid][idx] : null;
 
-          let filled = null;
           if (pPrev && pNext) {
             const ratio = (f - prevValid) / Math.max(1, nextValid - prevValid);
-            filled = new Point2D(
+            mutableLandmarks[f][idx] = new Point2D(
               pPrev.x + (pNext.x - pPrev.x) * ratio,
               pPrev.y + (pNext.y - pPrev.y) * ratio
             );
           } else if (pPrev) {
-            filled = pPrev;
+            mutableLandmarks[f][idx] = pPrev;
           } else if (pNext) {
-            filled = pNext;
+            mutableLandmarks[f][idx] = pNext;
           }
+        }
 
-          if (filled) {
-            mutableLandmarks[f][idx] = filled;
+        if (!mutableWorldLm[f][idx]) {
+          let prevValid = f - 1;
+          while (prevValid >= 0 && !mutableWorldLm[prevValid][idx]) prevValid--;
+          let nextValid = f + 1;
+          while (nextValid < rawFrames.length && !mutableWorldLm[nextValid][idx]) nextValid++;
+
+          const wpPrev = prevValid >= 0 ? mutableWorldLm[prevValid][idx] : null;
+          const wpNext = nextValid < rawFrames.length ? mutableWorldLm[nextValid][idx] : null;
+
+          if (wpPrev && wpNext) {
+            const ratio = (f - prevValid) / Math.max(1, nextValid - prevValid);
+            mutableWorldLm[f][idx] = new Point3D(
+              wpPrev.x + (wpNext.x - wpPrev.x) * ratio,
+              wpPrev.y + (wpNext.y - wpPrev.y) * ratio,
+              wpPrev.z + (wpNext.z - wpPrev.z) * ratio
+            );
+          } else if (wpPrev) {
+            mutableWorldLm[f][idx] = wpPrev;
+          } else if (wpNext) {
+            mutableWorldLm[f][idx] = wpNext;
           }
         }
       }
@@ -429,6 +523,8 @@ export class StsMetricCalculator {
 
     return rawFrames.map((frame, i) => {
       const lm = mutableLandmarks[i];
+      const wlm = mutableWorldLm[i];
+
       const lShoulder = lm[11];
       const rShoulder = lm[12];
       const lHip = lm[23];
@@ -458,6 +554,95 @@ export class StsMetricCalculator {
 
       const signedShift = isFrontCameraMirrored ? midBaseX - comX : comX - midBaseX;
       const leftBias = Math.max(0, Math.min(100, 50.0 + (signedShift / baseWidth) * 100.0));
+
+      // --- 3D World Landmarks 生体力学計算 ---
+      const wLSh = wlm[11];
+      const wRSh = wlm[12];
+      const wLHip = wlm[23];
+      const wRHip = wlm[24];
+      const wLKnee = wlm[25];
+      const wRKnee = wlm[26];
+      const wLAnk = wlm[27];
+      const wRAnk = wlm[28];
+
+      let comZ = 0.0;
+      let midAnkleZ = 0.0;
+      let trunkAngleDeg = 0.0;
+      let hipAngleDeg = 0.0;
+      let kneeAngleDeg = 0.0;
+
+      if (wLSh && wRSh && wLHip && wRHip) {
+        const midSh3D = {
+          x: (wLSh.x + wRSh.x) / 2,
+          y: (wLSh.y + wRSh.y) / 2,
+          z: (wLSh.z + wRSh.z) / 2
+        };
+        const midHip3D = {
+          x: (wLHip.x + wRHip.x) / 2,
+          y: (wLHip.y + wRHip.y) / 2,
+          z: (wLHip.z + wRHip.z) / 2
+        };
+        const midKnee3D = (wLKnee && wRKnee) ? {
+          x: (wLKnee.x + wRKnee.x) / 2,
+          y: (wLKnee.y + wRKnee.y) / 2,
+          z: (wLKnee.z + wRKnee.z) / 2
+        } : midHip3D;
+
+        const midAnk3D = (wLAnk && wRAnk) ? {
+          x: (wLAnk.x + wRAnk.x) / 2,
+          y: (wLAnk.y + wRAnk.y) / 2,
+          z: (wLAnk.z + wRAnk.z) / 2
+        } : midKnee3D;
+
+        midAnkleZ = midAnk3D.z;
+        comZ = 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z;
+
+        const dyTrunk = Math.abs(midSh3D.y - midHip3D.y);
+        const dzTrunk = Math.abs(midSh3D.z - midHip3D.z);
+        trunkAngleDeg = Math.atan2(dzTrunk, Math.max(0.01, dyTrunk)) * (180.0 / Math.PI);
+
+        const vTrunk = [0, -(midSh3D.y - midHip3D.y), -(midSh3D.z - midHip3D.z)];
+        const vThigh = [0, midKnee3D.y - midHip3D.y, midKnee3D.z - midHip3D.z];
+        hipAngleDeg = this.calculateAngleBetweenVectors(vTrunk, vThigh);
+
+        const vThighInv = [0, midHip3D.y - midKnee3D.y, midHip3D.z - midKnee3D.z];
+        const vShank = [0, midAnk3D.y - midKnee3D.y, midAnk3D.z - midKnee3D.z];
+        const kneeExtAngle = this.calculateAngleBetweenVectors(vThighInv, vShank);
+        kneeAngleDeg = Math.max(0, 180.0 - kneeExtAngle);
+      } else {
+        const dyTrunk2D = Math.abs(midShoulderY - midHipY);
+        trunkAngleDeg = Math.max(0, Math.min(60, (0.35 - dyTrunk2D) * 120.0));
+        comZ = (midShoulderY - 0.4) * 0.2;
+        midAnkleZ = 0.0;
+      }
+
+      return new PoseFrameData({
+        ...frame,
+        landmarks: lm,
+        worldLandmarks: wlm,
+        comX,
+        comY,
+        comZ,
+        midBaseX,
+        midAnkleZ,
+        baseWidth,
+        leftBiasPercent: leftBias,
+        rightBiasPercent: 100.0 - leftBias,
+        trunkAngleDeg,
+        hipAngleDeg,
+        kneeAngleDeg
+      });
+    });
+  }
+
+  static calculateAngleBetweenVectors(v1, v2) {
+    const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+    const mag1 = Math.hypot(v1[0], v1[1], v1[2]);
+    const mag2 = Math.hypot(v2[0], v2[1], v2[2]);
+    if (mag1 < 1e-4 || mag2 < 1e-4) return 0.0;
+    const cosVal = Math.max(-1.0, Math.min(1.0, dot / (mag1 * mag2)));
+    return Math.acos(cosVal) * (180.0 / Math.PI);
+  }
 
       return new PoseFrameData({
         ...frame,
