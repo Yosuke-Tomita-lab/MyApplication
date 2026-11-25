@@ -267,36 +267,15 @@ export class Sts3dViewer {
 
   loadFrames(frames) {
     this.allFrames = frames || [];
-    this.globalAnkleRef = this.computeGlobalAnkleAnchor(this.allFrames);
-    this.smoothedFrames = this.generateSmoothedFrames(this.allFrames, this.globalAnkleRef);
+    this.smoothedFrames = this.generateSmoothedFrames(this.allFrames);
     this.updateTrajectoryCurve();
     if (this.smoothedFrames.length > 0) {
       this.updateFrame(this.smoothedFrames[0]);
     }
   }
 
-  // 1. Stable Global Ankle Anchor (Eliminates frame-by-frame jitter caused by fluctuating base references)
-  computeGlobalAnkleAnchor(frames) {
-    const xs = [], ys = [], zs = [];
-    for (const f of frames) {
-      const w = f.worldLandmarks;
-      if (w && w[27] && w[28]) {
-        xs.push((w[27].x + w[28].x) / 2);
-        ys.push(Math.max(w[27].y, w[28].y));
-        zs.push((w[27].z + w[28].z) / 2);
-      }
-    }
-    if (xs.length === 0) return { x: 0, y: 0.85, z: 0 };
-    // Use median for high outlier rejection
-    xs.sort((a, b) => a - b);
-    ys.sort((a, b) => a - b);
-    zs.sort((a, b) => a - b);
-    const mid = Math.floor(xs.length / 2);
-    return { x: xs[mid], y: ys[mid], z: zs[mid] };
-  }
-
-  // 2. Temporal Smoothing Filter (Applies Gaussian weighted moving average across frames)
-  generateSmoothedFrames(frames, ref) {
+  // Temporal Smoothing Filter (Applies Gaussian weighted moving average across frames for silky motion)
+  generateSmoothedFrames(frames) {
     if (!frames || frames.length === 0) return [];
     const N = frames.length;
     const smoothed = [];
@@ -396,27 +375,31 @@ export class Sts3dViewer {
     this.comFloorTrajectoryLine.computeLineDistances();
   }
 
+  // Per-frame Foot Anchor: Grounds the ankles strictly to (0, 0.05, 0) on the floor.
+  // Since MediaPipe worldLandmarks places (0,0,0) at the moving pelvis, subtracting the
+  // frame's ankle ground reference ensures the feet remain immobile on the floor while the body rises!
   getAnkleReference(wlm) {
-    if (this.globalAnkleRef) return this.globalAnkleRef;
     if (!wlm) return { x: 0, y: 0.85, z: 0 };
     const ankL = wlm[27];
     const ankR = wlm[28];
     if (ankL && ankR) {
       return {
         x: (ankL.x + ankR.x) / 2,
-        y: Math.max(ankL.y, ankR.y),
+        y: Math.max(ankL.y, ankR.y), // MediaPipe: Y is downward, so foot ground contact has maximum Y
         z: (ankL.z + ankR.z) / 2
       };
     }
+    if (ankL) return { x: ankL.x, y: ankL.y, z: ankL.z };
+    if (ankR) return { x: ankR.x, y: ankR.y, z: ankR.z };
     return { x: 0, y: 0.85, z: 0 };
   }
 
   transformWorldPoint(pt, ref) {
     if (!pt) return null;
     return new THREE.Vector3(
-      pt.x - ref.x,              // Lateral: Centered at midpoint of ankles (X=0)
-      (ref.y - pt.y) + 0.05,     // Vertical: Ankles grounded at floor Y=0.05m; body rises smoothly!
-      -(pt.z - ref.z)            // Anterior-Posterior: Ankles at Z=0; seated trunk is behind (Z<0), leans forward to Z~0
+      pt.x - ref.x,              // 左右: 両足首の中点を X=0 に固定
+      (ref.y - pt.y) + 0.05,     // 高さ: 足首接地位置を床面 Y=0.05m に固定。骨盤・体幹・CoMが上方へ立ち上がる！
+      -(pt.z - ref.z)            // 前後: 足首を Z=0 に固定。着座時は後方(Z<0)、立ち上がりで前方(Z~0)へ！
     );
   }
 
@@ -445,8 +428,14 @@ export class Sts3dViewer {
       return new THREE.Vector3(cx, cy, cz);
     }
 
-    const fx = (frame.comX - 0.5) * 1.2;
-    const fy = Math.max(0.1, (1.0 - frame.comY) * 1.5);
+    const baseFootY = (frame.landmarks && (frame.landmarks[27] || frame.landmarks[28]))
+      ? Math.max(frame.landmarks[27]?.y ?? 0.85, frame.landmarks[28]?.y ?? 0.85)
+      : 0.85;
+    const baseFootX = (frame.landmarks && (frame.landmarks[27] || frame.landmarks[28]))
+      ? (((frame.landmarks[27]?.x ?? 0.5) + (frame.landmarks[28]?.x ?? 0.5)) / 2)
+      : 0.5;
+    const fx = (frame.comX - baseFootX) * 1.2;
+    const fy = Math.max(0.05, (baseFootY - frame.comY) * 1.5 + 0.05);
     const fz = (frame.comZ || 0);
     return new THREE.Vector3(fx, fy, fz);
   }
@@ -540,9 +529,15 @@ export class Sts3dViewer {
       // Fallback
       const lm2 = frame.landmarks ? frame.landmarks[idx] : null;
       if (lm2) {
+        const baseFootY = (frame.landmarks[27] || frame.landmarks[28])
+          ? Math.max(frame.landmarks[27]?.y ?? 0.85, frame.landmarks[28]?.y ?? 0.85)
+          : 0.85;
+        const baseFootX = (frame.landmarks[27] || frame.landmarks[28])
+          ? (((frame.landmarks[27]?.x ?? 0.5) + (frame.landmarks[28]?.x ?? 0.5)) / 2)
+          : 0.5;
         return new THREE.Vector3(
-          (lm2.x - 0.5) * 1.2,
-          (1.0 - lm2.y) * 1.5,
+          (lm2.x - baseFootX) * 1.2,
+          Math.max(0.02, (baseFootY - lm2.y) * 1.5 + 0.05),
           0
         );
       }
