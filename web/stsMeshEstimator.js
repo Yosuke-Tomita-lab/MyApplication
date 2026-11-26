@@ -81,14 +81,24 @@ export class StsMeshEstimator {
     return !!(this.hmr && this.body && this.faces);
   }
 
+  /**
+   * One onnxruntime-web instance per build: "ort.all.min.mjs" (WebGPU + CPU, JSEP wasm) or "ort.wasm.min.mjs"
+   * (CPU only, smaller wasm). Separate instances, so a failed WebGPU start-up does not block the CPU fallback.
+   */
+  static async loadOrt(bundle) {
+    StsMeshEstimator.ortModules = StsMeshEstimator.ortModules || {};
+    if (!StsMeshEstimator.ortModules[bundle]) {
+      const ort = await import(`${ORT_BASE}${bundle}`);
+      ort.env.wasm.wasmPaths = ORT_BASE;
+      ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
+      StsMeshEstimator.ortModules[bundle] = ort;
+    }
+    return StsMeshEstimator.ortModules[bundle];
+  }
+
   /** Downloads (once, then from the browser cache) and prepares the models. Returns the backend used. */
   async init({ preferWebGpu = true } = {}) {
     if (this.ready) return this.backend;
-    if (!this.ort) {
-      this.ort = await import(`${ORT_BASE}ort.all.min.mjs`);
-      this.ort.env.wasm.wasmPaths = ORT_BASE;
-      this.ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
-    }
     const progress = { loaded: 0, total: 0 };
     const report = () => this.onProgress({ stage: "download", loaded: progress.loaded, total: progress.total });
     const [hmrBuf, bodyBuf, facesBuf] = await Promise.all([
@@ -107,20 +117,37 @@ export class StsMeshEstimator {
       // navigator.gpu can exist without a usable adapter; onnxruntime then drops WebGPU silently.
       try { useGpu = !!(await navigator.gpu.requestAdapter()); } catch { useGpu = false; }
     }
+    let gpuError = null;
     if (useGpu) {
       try {
-        this.hmr = await this.ort.InferenceSession.create(hmrBuf, { executionProviders: ["webgpu", "wasm"] });
+        const ort = await StsMeshEstimator.loadOrt("ort.all.min.mjs");
+        this.hmr = await ort.InferenceSession.create(hmrBuf, { executionProviders: ["webgpu", "wasm"] });
+        this.body = await ort.InferenceSession.create(bodyBuf, { executionProviders: ["wasm"] });
+        this.ort = ort;
         this.backend = "webgpu";
       } catch (e) {
+        // e.g. iPad/iPhone (WebKit): WebGPU is exposed but onnxruntime's WebGPU runtime fails to start. That failure
+        // poisons this onnxruntime instance ("previous call to 'initWasm()' failed"), so the CPU fallback below
+        // loads a separate, CPU-only build instead of reusing it.
+        gpuError = e;
         console.warn("InstantHMR: WebGPU unavailable, falling back to WASM:", e);
+        this.hmr = null; this.body = null;
       }
     }
     if (!this.hmr) {
-      this.hmr = await this.ort.InferenceSession.create(hmrBuf, { executionProviders: ["wasm"] });
-      this.backend = "wasm";
+      try {
+        const ort = await StsMeshEstimator.loadOrt("ort.wasm.min.mjs");
+        this.hmr = await ort.InferenceSession.create(hmrBuf, { executionProviders: ["wasm"] });
+        // The body model is small; it runs on the CPU in every case.
+        this.body = await ort.InferenceSession.create(bodyBuf, { executionProviders: ["wasm"] });
+        this.ort = ort;
+        this.backend = "wasm";
+      } catch (e) {
+        this.hmr = null; this.body = null;
+        const msg = `CPU(WASM)での初期化に失敗しました: ${e?.message || e}` + (gpuError ? ` / WebGPU: ${gpuError?.message || gpuError}` : "");
+        throw new Error(msg);
+      }
     }
-    // The body model is small; it runs on the CPU in every case.
-    this.body = await this.ort.InferenceSession.create(bodyBuf, { executionProviders: ["wasm"] });
     return this.backend;
   }
 
