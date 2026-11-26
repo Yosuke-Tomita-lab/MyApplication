@@ -300,8 +300,14 @@ export class Sts3dViewer {
       const geo = new THREE.BufferGeometry();
       geo.setIndex(new THREE.BufferAttribute(faces, 1));
       geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(frames[0].vertices.length), 3));
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8b7cf6, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
+      // Semi-transparent so the CoM marker inside the body stays visible. Front faces only and no depth writes,
+      // so the overlapping layers of the body (arms over the torso) do not flicker in and out.
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x8b7cf6, roughness: 0.55, metalness: 0.05, side: THREE.FrontSide,
+        transparent: true, opacity: 0.45, depthWrite: false
+      });
       this.bodyMesh = new THREE.Mesh(geo, mat);
+      this.bodyMesh.renderOrder = 1;
       this.bodyMesh.castShadow = true;
       this.scene.add(this.bodyMesh);
     }
@@ -376,6 +382,9 @@ export class Sts3dViewer {
     // Same placement as transformWorldPoint: ankles at the origin, feet on the floor, y up, z towards the viewer.
     // Each frame is taken relative to its own mid-ankle before averaging, as the unsmoothed mesh was placed.
     const sx = this.isMirrored ? -1 : 1;
+    // Mirroring flips the triangle winding, so the outside of the body is then the back side
+    const side = this.isMirrored ? THREE.BackSide : THREE.FrontSide;
+    if (this.bodyMesh.material.side !== side) { this.bodyMesh.material.side = side; this.bodyMesh.material.needsUpdate = true; }
     const pos = this.bodyMesh.geometry.attributes.position.array;
     pos.fill(0);
     let cx = 0, cy = 0, cz = 0, cw = 0;
