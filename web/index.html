@@ -100,6 +100,12 @@
       }
     }
   </style>
+  <style>
+    .rtab-hidden { display: none !important; }
+    .rtabBtn { color: #475569; }
+    .rtabBtn.active { background: #2563eb; color: #fff; }
+    #reportSectionPicker label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
 
@@ -354,6 +360,37 @@
     <!-- MAIN INTERACTIVE ANALYSIS WORKSPACE -->
     <div id="analysisWorkspace" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
+      <!-- PLAYBACK BAR (sticky: stays at the top while scrolling) -->
+      <div id="playbackBar" class="lg:col-span-12 sticky z-20 bg-white/95 backdrop-blur border border-slate-200 rounded-2xl shadow-sm px-3 py-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="flex items-center gap-2 flex-1 min-w-[260px]">
+              <button id="playPauseBtn" disabled class="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
+                <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                <svg id="pauseIcon" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              </button>
+              <button id="stepPrevBtn" disabled title="前へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">◀ -1F</button>
+              <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
+              <button id="stepNextBtn" disabled title="次へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">+1F ▶</button>
+              <span id="timeDisplay" class="text-xs font-mono text-slate-600 whitespace-nowrap min-w-[90px] text-right">0.00s / 0.00s</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-[11px]">
+            <label for="playbackRateSelect" class="text-slate-500">速度</label>
+            <select id="playbackRateSelect" class="border border-slate-200 rounded-lg px-1.5 py-1 bg-white text-slate-700">
+              <option value="0.1">0.1×</option>
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="1" selected>1×</option>
+            </select>
+            <label for="loopModeSelect" class="text-slate-500 ml-1">ループ</label>
+            <select id="loopModeSelect" class="border border-slate-200 rounded-lg px-1.5 py-1 bg-white text-slate-700">
+              <option value="off">なし</option>
+              <option value="all">動画全体</option>
+              <option value="trial">選択中の回（開始〜立位安定）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <!-- Left Column: Video & Overlay & 3D Mesh Viewer (7 Cols) -->
       <div class="lg:col-span-7 space-y-4">
 
@@ -461,20 +498,6 @@
             <span id="activeTrialLabel" class="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">未選択</span>
           </div>
 
-          <!-- 2. Video Scroller (SeekBar) + Frame Step Buttons -->
-          <div class="space-y-1.5">
-            <div class="flex items-center gap-2">
-              <button id="playPauseBtn" disabled class="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition disabled:opacity-40">
-                <svg id="playIcon" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                <svg id="pauseIcon" class="w-4 h-4 hidden" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-              </button>
-              <button id="stepPrevBtn" disabled title="前へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">◀ -1F</button>
-              <input type="range" id="seekBar" min="0" max="1000" value="0" step="1" disabled class="flex-1 accent-blue-600 cursor-pointer disabled:opacity-40">
-              <button id="stepNextBtn" disabled title="次へコマ送り (0.04s)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-mono font-bold disabled:opacity-40">+1F ▶</button>
-              <span id="timeDisplay" class="text-xs font-mono text-slate-600 whitespace-nowrap min-w-[90px] text-right">0.00s / 0.00s</span>
-            </div>
-          </div>
-
           <!-- 3. Immediate Event Identification Buttons (現在のスクロール位置を各タイミングに設定) -->
           <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
             <div class="flex items-center justify-between text-[11px] text-slate-500">
@@ -570,8 +593,17 @@
       <!-- Right Column: Reports, 30s-STS Controls & Graphs (5 Cols) -->
       <div class="lg:col-span-5 space-y-4">
 
+        <!-- Right panel tabs (one group of cards at a time, so the column stays short) -->
+        <div id="rightPanelTabs" class="flex flex-wrap gap-1 bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200 text-[11px] font-semibold">
+          <button data-rtab="summary" class="rtabBtn px-2.5 py-1 rounded-lg">サマリー</button>
+          <button data-rtab="angle" class="rtabBtn px-2.5 py-1 rounded-lg">角度</button>
+          <button data-rtab="stability" class="rtabBtn px-2.5 py-1 rounded-lg">安定性・COP</button>
+          <button data-rtab="kinetics" class="rtabBtn px-2.5 py-1 rounded-lg">パワー・関節</button>
+          <button data-rtab="trend" class="rtabBtn px-2.5 py-1 rounded-lg">推移</button>
+        </div>
+
         <!-- 30s-STS Reps Adjustment Card (Visible only in 30s-STS mode) -->
-        <div id="thirtySecAdjustCard" class="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-3 hidden">
+        <div id="thirtySecAdjustCard" data-rtab-panel="summary" class="bg-amber-50 border border-amber-200 p-4 rounded-2xl space-y-3 hidden">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
@@ -589,7 +621,7 @@
         </div>
 
         <!-- Overall Summary Report Card -->
-        <div id="summaryReportCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div id="summaryReportCard" data-rtab-panel="summary" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-100 pb-3">
             <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-blue-600"></span>
@@ -627,7 +659,7 @@
         </div>
 
         <!-- Sagittal & 3D Kinematics Metrics Card (矢状面・3D生体力学指標) -->
-        <div id="sagittal3dCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+        <div id="sagittal3dCard" data-rtab-panel="summary" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
           <div class="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
@@ -719,7 +751,7 @@
         </div>
 
         <!-- Knee-Hip Angle-Angle Diagram Card (サイクログラム) -->
-        <div id="angleAngleCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div id="angleAngleCard" data-rtab-panel="angle" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
             <div>
               <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -754,7 +786,7 @@
         </div>
 
         <!-- Margin of Stability Card (bird's-eye view + time series) -->
-        <div id="stabilityCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div id="stabilityCard" data-rtab-panel="stability" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
             <div>
               <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -804,7 +836,7 @@
         </div>
 
         <!-- CoM power & joint kinetics (estimated) -->
-        <div id="kineticsCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div id="kineticsCard" data-rtab-panel="kinetics" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
             <div>
               <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
@@ -863,7 +895,7 @@
         </div>
 
         <!-- Cumulative Time Graph Card -->
-        <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div id="cumTimeGraphCard" data-rtab-panel="trend" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-cyan-500"></span>
@@ -877,7 +909,7 @@
         </div>
 
         <!-- Lateral Bias Graph Card -->
-        <div id="biasGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+        <div id="biasGraphCard" data-rtab-panel="trend" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
@@ -926,6 +958,18 @@
           </button>
           <button id="closeReportModalBtn" class="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition text-lg leading-none font-bold">&times;</button>
         </div>
+      </div>
+
+      <!-- Report sections: the default report is shown first; tick / untick to change it -->
+      <div id="reportSectionPicker" class="px-4 py-2 border-b border-slate-200 bg-white flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-700">
+        <span class="font-semibold text-slate-500">含める項目:</span>
+        <label><input type="checkbox" data-rsec-toggle="summary" checked> 被験者情報・サマリー</label>
+        <label><input type="checkbox" data-rsec-toggle="stick" checked> スティックピクチャー</label>
+        <label><input type="checkbox" data-rsec-toggle="graphs" checked> 推移グラフ</label>
+        <label><input type="checkbox" data-rsec-toggle="table" checked> 試行別テーブル</label>
+        <label><input type="checkbox" data-rsec-toggle="notes" checked> 所見・署名欄</label>
+        <label><input type="checkbox" data-rsec-toggle="advanced"> 安定性（MoS）・パワー・関節モーメント</label>
+        <button id="reportSectionsResetBtn" type="button" class="ml-auto px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-slate-50">デフォルトに戻す</button>
       </div>
 
       <!-- Modal Body (Scrollable preview wrapper) -->
@@ -2431,6 +2475,8 @@
     let animFrameId = null;
     function renderLoop() {
       if (!video.paused && !video.ended) {
+        const lr = trialLoopRange();
+        if (lr && (video.currentTime >= lr[1] || video.currentTime < lr[0] - 0.05)) video.currentTime = lr[0];
         const cur = video.currentTime;
         const dur = video.duration || 1;
         seekBar.value = Math.round((cur / dur) * 1000);
@@ -2440,9 +2486,60 @@
       }
     }
 
+    // Keep the playback bar just below the (sticky) header, whose height changes with the window width
+    (() => {
+      const hdr = document.querySelector("header"), bar = document.getElementById("playbackBar");
+      const place = () => { bar.style.top = `${(hdr ? hdr.offsetHeight : 0) + 4}px`; };
+      place();
+      window.addEventListener("resize", place);
+      if (hdr && window.ResizeObserver) new ResizeObserver(place).observe(hdr);
+    })();
+
+    // Right panel tabs
+    let activeRightTab = "summary";
+    try { activeRightTab = localStorage.getItem("sts.rightTab") || "summary"; } catch { /* storage unavailable */ }
+    function showRightTab(tab) {
+      activeRightTab = tab;
+      try { localStorage.setItem("sts.rightTab", tab); } catch { /* storage unavailable */ }
+      document.querySelectorAll("[data-rtab-panel]").forEach(el => el.classList.toggle("rtab-hidden", el.dataset.rtabPanel !== tab));
+      document.querySelectorAll(".rtabBtn").forEach(b => b.classList.toggle("active", b.dataset.rtab === tab));
+      // Charts drawn while hidden have no size: resize the ones now shown
+      document.querySelectorAll(`[data-rtab-panel="${tab}"] canvas`).forEach(cv => { const ch = Chart.getChart(cv); if (ch) ch.resize(); });
+      if (tab === "stability") drawStabilityMap();
+    }
+    document.querySelectorAll(".rtabBtn").forEach(b => b.addEventListener("click", () => showRightTab(b.dataset.rtab)));
+    showRightTab(activeRightTab);
+
+    // Playback speed & loop
+    const playbackRateSelect = document.getElementById("playbackRateSelect");
+    const loopModeSelect = document.getElementById("loopModeSelect");
+    const applyPlaybackOptions = () => {
+      video.playbackRate = parseFloat(playbackRateSelect.value) || 1;
+      video.loop = loopModeSelect.value === "all";
+    };
+    playbackRateSelect.onchange = applyPlaybackOptions;
+    loopModeSelect.onchange = applyPlaybackOptions;
+    video.addEventListener("loadedmetadata", applyPlaybackOptions);
+    video.addEventListener("ratechange", () => {
+      // some browsers reset the rate when a new source loads
+      const want = parseFloat(playbackRateSelect.value) || 1;
+      if (Math.abs(video.playbackRate - want) > 1e-3 && !video.seeking) playbackRateSelect.value = String(video.playbackRate);
+    });
+    /** [start, end] seconds of the selected trial (start -> stable) when looping it, else null. */
+    function trialLoopRange() {
+      if (loopModeSelect.value !== "trial" || !analysisResult) return null;
+      const t = analysisResult.trials[selectedTrialIdx];
+      if (!t) return null;
+      const end = (t.stableTimeMs ?? t.standEndTimeMs) / 1000;
+      return [Math.max(0, t.startTimeMs / 1000 - 0.3), Math.min(video.duration || end + 0.3, end + 0.3)];
+    }
+
     // Video Playback & Overlay Drawing
     playPauseBtn.onclick = () => {
       if (video.paused) {
+        applyPlaybackOptions();
+        const lr = trialLoopRange();
+        if (lr && (video.currentTime < lr[0] || video.currentTime >= lr[1])) video.currentTime = lr[0];
         video.play();
         playIcon.classList.add("hidden");
         pauseIcon.classList.remove("hidden");
@@ -2766,7 +2863,73 @@
       }, 150);
     };
 
+    // Report sections: defaults, the viewer's choice (remembered in this browser), applied after each build
+    const REPORT_SECTION_DEFAULTS = { summary: true, stick: true, graphs: true, table: true, notes: true, advanced: false };
+    function loadReportSections() {
+      let saved = null;
+      try { saved = JSON.parse(localStorage.getItem("sts.reportSections") || "null"); } catch { /* storage unavailable */ }
+      const sel = { ...REPORT_SECTION_DEFAULTS, ...(saved || {}) };
+      document.querySelectorAll("[data-rsec-toggle]").forEach(cb => { cb.checked = !!sel[cb.dataset.rsecToggle]; });
+    }
+    function currentReportSections() {
+      const sel = {};
+      document.querySelectorAll("[data-rsec-toggle]").forEach(cb => { sel[cb.dataset.rsecToggle] = cb.checked; });
+      return sel;
+    }
+    function applyReportSections() {
+      const sel = currentReportSections();
+      a4PrintContainer.querySelectorAll("[data-rsec]").forEach(el => { el.style.display = sel[el.dataset.rsec] === false ? "none" : ""; });
+    }
+    document.querySelectorAll("[data-rsec-toggle]").forEach(cb => cb.addEventListener("change", () => {
+      try { localStorage.setItem("sts.reportSections", JSON.stringify(currentReportSections())); } catch { /* storage unavailable */ }
+      if (analysisResult) generateA4Report();
+    }));
+    document.getElementById("reportSectionsResetBtn").onclick = () => {
+      try { localStorage.removeItem("sts.reportSections"); } catch { /* storage unavailable */ }
+      loadReportSections();
+      if (analysisResult) generateA4Report();
+    };
+    loadReportSections();
+
+    /** Optional report section: margin of stability, CoM power and joint kinetics for each trial. */
+    function buildAdvancedReportSection() {
+      if (!analysisResult) return "";
+      const f = (v, d = 1) => Number.isFinite(v) ? v.toFixed(d) : "--";
+      const rows = analysisResult.trials.map(t => {
+        const m = stabilityTrialSummary(t);
+        const k = summarizeKinetics(kineticsResult, t);
+        const j = (side, jt, key) => f(k?.joints[side][jt][key], 2);
+        return `<tr class="border-b border-slate-100 text-center text-[10px]">
+          <td class="py-0.5 font-bold">${t.repIndex}</td>
+          <td class="py-0.5 font-mono">${f(m?.mosApAtSeatOffCm)} / ${f(m?.minMosApCm)}</td>
+          <td class="py-0.5 font-mono">${f(m?.mosMlAtSeatOffCm)} / ${f(m?.minMosMlCm)}</td>
+          <td class="py-0.5 font-mono font-bold text-violet-700">${f(k?.peakComPowerWkg, 2)}</td>
+          <td class="py-0.5 font-mono">${j("left", "hip", "peakMoment")} / ${j("right", "hip", "peakMoment")}</td>
+          <td class="py-0.5 font-mono">${j("left", "knee", "peakMoment")} / ${j("right", "knee", "peakMoment")}</td>
+          <td class="py-0.5 font-mono">${j("left", "ankle", "peakMoment")} / ${j("right", "ankle", "peakMoment")}</td>
+          <td class="py-0.5 font-mono">${j("left", "hip", "peakPower")} / ${j("right", "hip", "peakPower")}</td>
+          <td class="py-0.5 font-mono">${j("left", "knee", "peakPower")} / ${j("right", "knee", "peakPower")}</td>
+        </tr>`;
+      }).join("");
+      return `<div data-rsec="advanced" class="space-y-0.5">
+        <div class="text-[10.5px] font-bold text-slate-800">安定性（MoS）・重心パワー・関節モーメント／パワー <span class="font-normal text-slate-500">（推定値。床反力・COP・左右配分は重心から推定。関節は離臀〜立位安定、左 / 右）</span></div>
+        <table class="w-full border border-slate-200 rounded text-[10px]">
+          <thead class="bg-slate-50 text-slate-600"><tr>
+            <th class="py-0.5">回</th><th>前後MoS 離臀/最小 (cm)</th><th>左右MoS 離臀/最小 (cm)</th><th>重心パワー ピーク (W/kg)</th>
+            <th>股 伸展M (N·m/kg)</th><th>膝 伸展M (N·m/kg)</th><th>足 底屈M (N·m/kg)</th><th>股 パワー (W/kg)</th><th>膝 パワー (W/kg)</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    }
+
     function generateA4Report() {
+      generateA4ReportBody();
+      a4PrintContainer.insertAdjacentHTML("beforeend", buildAdvancedReportSection());
+      applyReportSections();
+    }
+
+    function generateA4ReportBody() {
       const res = analysisResult;
       const is30s = res.mode.id === "THIRTY_SECONDS";
       const trials = res.trials;
@@ -2853,7 +3016,7 @@
           </div>
 
           <!-- Meta Row: Subject & Protocol Information + Overall Key Metrics -->
-          <div class="grid grid-cols-12 gap-2 text-xs">
+          <div data-rsec="summary" class="grid grid-cols-12 gap-2 text-xs">
             <!-- Subject Info (4 cols) -->
             <div class="col-span-4 bg-slate-50 border border-slate-200 rounded-lg p-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10.5px]">
               <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
@@ -2897,7 +3060,7 @@
             <!-- Left Column: Stick Picture + Trend Graphs -->
             <div class="flex flex-col justify-between space-y-2">
               <!-- Stick Picture -->
-              <div class="space-y-0.5">
+              <div data-rsec="stick" class="space-y-0.5">
                 <div class="flex justify-between items-center text-[10.5px]">
                   <h2 class="font-bold text-slate-900 flex items-center gap-1">
                     <span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
@@ -2912,7 +3075,7 @@
               </div>
 
               <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
-              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+              <div data-rsec="graphs" class="grid grid-cols-3 gap-1.5 pt-0.5">
                 <div class="border border-slate-200 rounded-lg p-1 bg-white flex flex-col justify-between">
                   <div class="text-[9px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
                   ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-32 object-contain">` : `<div class="h-32 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
@@ -2931,7 +3094,7 @@
             <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
             <div class="flex flex-col justify-between space-y-2">
               <!-- Repetition Breakdown Table -->
-              <div class="space-y-0.5">
+              <div data-rsec="table" class="space-y-0.5">
                 <h2 class="text-[10.5px] font-bold text-slate-900 flex items-center gap-1">
                   <span class="w-1.5 h-1.5 rounded-full bg-slate-700"></span>
                   各回生体力学メトリクス一覧 (3D & 矢状面指標を含む)
@@ -2960,7 +3123,7 @@
               </div>
 
               <!-- Clinical Observation & Signature Block -->
-              <div class="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70 grid grid-cols-3 gap-2.5 flex-1 flex flex-col justify-between">
+              <div data-rsec="notes" class="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70 grid grid-cols-3 gap-2.5 flex-1 flex flex-col justify-between">
                 <div class="col-span-2 flex flex-col justify-between space-y-1.5">
                   <span class="text-[9.5px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
                   <div class="space-y-2.5 flex-1 pt-0.5">
@@ -3011,7 +3174,7 @@
           </div>
 
           <!-- Subject & Protocol Information Bar -->
-          <div class="bg-slate-50 border border-slate-200 rounded-md p-1.5 grid grid-cols-4 gap-1 text-[10px]">
+          <div data-rsec="summary" class="bg-slate-50 border border-slate-200 rounded-md p-1.5 grid grid-cols-4 gap-1 text-[10px]">
             <div><span class="text-slate-500">測定プロトコル:</span> <strong class="text-blue-800">${res.mode.title}</strong></div>
             <div><span class="text-slate-500">被験者身長:</span> <strong>${res.anthropometrics.heightCm.toFixed(1)} cm</strong></div>
             <div><span class="text-slate-500">被験者体重:</span> <strong>${res.anthropometrics.weightKg.toFixed(1)} kg</strong></div>
@@ -3021,7 +3184,7 @@
             <!-- Left Column: Stick Picture + Trend Graphs -->
             <div class="flex flex-col justify-between space-y-2.5">
               <!-- Stick Picture -->
-              <div class="space-y-1">
+              <div data-rsec="stick" class="space-y-1">
                 <div class="flex justify-between items-center text-xs">
                   <h2 class="font-bold text-slate-900 flex items-center gap-1.5">
                     <span class="w-2 h-2 rounded-full bg-blue-600"></span>
@@ -3036,7 +3199,7 @@
               </div>
 
               <!-- Trend Graphs (3 Side-by-Side inside Left Column) -->
-              <div class="grid grid-cols-3 gap-1.5 pt-0.5">
+              <div data-rsec="graphs" class="grid grid-cols-3 gap-1.5 pt-0.5">
                 <div class="border border-slate-200 rounded-lg p-1.5 bg-white flex flex-col justify-between">
                   <div class="text-[9.5px] font-bold text-slate-700 mb-0.5">■ 膝-股関節 角相関図</div>
                   ${angleChartImg ? `<img src="${angleChartImg}" class="w-full h-36 object-contain">` : `<div class="h-36 flex items-center justify-center text-xs text-slate-400">グラフなし</div>`}
@@ -3055,7 +3218,7 @@
             <!-- Right Column: Metrics Breakdown Table + Clinical Notes & Signatures -->
             <div class="flex flex-col justify-between space-y-2.5">
               <!-- Repetition Breakdown Table -->
-              <div class="space-y-1">
+              <div data-rsec="table" class="space-y-1">
                 <h2 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <span class="w-2 h-2 rounded-full bg-slate-700"></span>
                   各回生体力学メトリクス一覧
@@ -3081,7 +3244,7 @@
               </div>
 
               <!-- Clinical Observation & Signature Block -->
-              <div class="border border-slate-200 rounded-lg p-3 bg-slate-50/70 grid grid-cols-3 gap-3 flex-1 flex flex-col justify-between">
+              <div data-rsec="notes" class="border border-slate-200 rounded-lg p-3 bg-slate-50/70 grid grid-cols-3 gap-3 flex-1 flex flex-col justify-between">
                 <div class="col-span-2 flex flex-col justify-between space-y-2">
                   <span class="text-[10px] font-bold text-slate-600">【総合所見・理学療法評価メモ】</span>
                   <div class="space-y-3.5 flex-1 pt-1">
