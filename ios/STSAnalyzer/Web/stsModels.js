@@ -97,7 +97,8 @@ export class PoseFrameData {
     kneeAngleDeg = 0.0,
     grf = null,
     meshCom = null,
-    grfVector = null
+    grfVector = null,
+    comLateral = null
   }) {
     this.timestampMs = timestampMs;
     this.landmarks = landmarks; // Map of index -> Point2D
@@ -119,6 +120,8 @@ export class PoseFrameData {
     this.meshCom = meshCom;
     // Estimated whole-body ground reaction force [N]: {x: image right, y: up, z: away from the camera}
     this.grfVector = grfVector;
+    // CoM to the subject's left of the mid-ankle [m], in the body frame (null without 3D landmarks)
+    this.comLateral = comLateral;
   }
 }
 

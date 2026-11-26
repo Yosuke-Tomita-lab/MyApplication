@@ -9,8 +9,8 @@
  *   the heels at seat-off).
  *
  * Everything is in the horizontal plane, relative to the mid-ankle point, which does not move during a
- * sit-to-stand, so positions and velocities there are ground-fixed. The body axes come from the feet:
- * forward = mean heel -> toe direction, left = towards the left foot. The base of support is the bounding box,
+ * sit-to-stand, so positions and velocities there are ground-fixed. The body axes are the analysis body frame
+ * (initial seated pelvis orientation, StsMetricCalculator.computeBodyFrame), or the feet when it is missing. The base of support is the bounding box,
  * in those axes, of both feet's ankle, heel and toe points (their median positions over the recording).
  */
 
@@ -51,7 +51,7 @@ function frameCom3D(f) {
  *     series: [{timestampMs, com: [f, m], xcom: [f, m], mosAp, mosMl}], trials: [{repIndex, ...summary}] }
  *   where [f, m] are metres forward / to the left of the mid-ankle point.
  */
-export function computeMarginOfStability(frames, trials, isMirrored = false) {
+export function computeMarginOfStability(frames, trials, isMirrored = false, bodyFrame = null) {
   if (!frames || frames.length < 5) return null;
   const L = isMirrored ? FOOT_POINTS.right : FOOT_POINTS.left;
   const R = isMirrored ? FOOT_POINTS.left : FOOT_POINTS.right;
@@ -82,7 +82,8 @@ export function computeMarginOfStability(frames, trials, isMirrored = false) {
   const feet = { left: [0, 1, 2].map((k) => medPt("left", k)), right: [0, 1, 2].map((k) => medPt("right", k)) };
   if ([...feet.left, ...feet.right].some((p) => !p)) return null;
 
-  // Body axes from the feet: forward = mean heel -> toe; left = perpendicular, pointing to the left foot
+  // Body axes: the analysis body frame (initial pelvis orientation) when given, else from the feet
+  // (forward = mean heel -> toe; left = perpendicular, pointing to the left foot)
   let fx = (feet.left[2].x - feet.left[1].x) + (feet.right[2].x - feet.right[1].x);
   let fz = (feet.left[2].z - feet.left[1].z) + (feet.right[2].z - feet.right[1].z);
   const fn = Math.hypot(fx, fz) || 1;
@@ -90,6 +91,7 @@ export function computeMarginOfStability(frames, trials, isMirrored = false) {
   let mx = -fz, mz = fx;
   const lr = { x: feet.left[0].x - feet.right[0].x, z: feet.left[0].z - feet.right[0].z };
   if (mx * lr.x + mz * lr.z < 0) { mx = -mx; mz = -mz; }
+  if (bodyFrame) { fx = bodyFrame.forward.x; fz = bodyFrame.forward.z; mx = bodyFrame.left.x; mz = bodyFrame.left.z; }
   const toBody = (p) => [p.x * fx + p.z * fz, p.x * mx + p.z * mz];
 
   const feetBody = { left: feet.left.map(toBody), right: feet.right.map(toBody) };
