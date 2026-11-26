@@ -77,6 +77,17 @@ export class StsMeshEstimator {
     return typeof navigator !== "undefined" && "gpu" in navigator;
   }
 
+  /**
+   * iPhone / iPad (every browser there is WebKit, iPadOS also reports itself as a Mac). WebGPU starts there but
+   * fails part-way through a recording ("map async was not successful", then the GPU never answers), so these
+   * devices use the CPU (WASM) from the start.
+   */
+  static isAppleMobile() {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1);
+  }
+
   get ready() {
     return !!(this.hmr && this.body && this.faces);
   }
@@ -112,7 +123,7 @@ export class StsMeshEstimator {
     this.faces = new Uint16Array(facesBuf);
     this.onProgress({ stage: "session" });
 
-    let useGpu = preferWebGpu && StsMeshEstimator.isWebGpuAvailable();
+    let useGpu = preferWebGpu && StsMeshEstimator.isWebGpuAvailable() && !StsMeshEstimator.isAppleMobile();
     if (useGpu) {
       // navigator.gpu can exist without a usable adapter; onnxruntime then drops WebGPU silently.
       try { useGpu = !!(await navigator.gpu.requestAdapter()); } catch { useGpu = false; }
@@ -148,6 +159,27 @@ export class StsMeshEstimator {
         throw new Error(msg);
       }
     }
+    return this.backend;
+  }
+
+  /**
+   * Replace the WebGPU sessions with CPU (WASM) ones, e.g. after the GPU failed part-way through a recording.
+   * The models come from the browser cache, so nothing is downloaded again.
+   */
+  async switchToCpu() {
+    const progress = { loaded: 0, total: 0 };
+    const [hmrBuf, bodyBuf] = await Promise.all([
+      this.fetchModel(this.modelBaseUrl + MODEL_FILE, progress, () => {}),
+      this.fetchModel(this.modelBaseUrl + BODY_FILE, progress, () => {}),
+    ]);
+    for (const s of [this.hmr, this.body]) { try { s && s.release && s.release(); } catch { /* GPU already gone */ } }
+    this.hmr = null; this.body = null;
+    const ort = await StsMeshEstimator.loadOrt("ort.wasm.min.mjs");
+    this.hmr = await ort.InferenceSession.create(hmrBuf, { executionProviders: ["wasm"] });
+    this.body = await ort.InferenceSession.create(bodyBuf, { executionProviders: ["wasm"] });
+    this.ort = ort;
+    this.backend = "wasm";
+    this.gpuRuns = 0;
     return this.backend;
   }
 
@@ -251,12 +283,34 @@ export class StsMeshEstimator {
     const rgb = new Uint8Array(SIZE * SIZE * 3);
     for (let i = 0, k = 0; i < px.length; i += 4) { rgb[k++] = px[i]; rgb[k++] = px[i + 1]; rgb[k++] = px[i + 2]; }
 
-    const o = await this.hmr.run({
+    const feeds = {
       image: new ort.Tensor("uint8", rgb, [1, SIZE, SIZE, 3]),
       cliff_cond: new ort.Tensor("float32", Float32Array.from([Math.atan((cx - W / 2) / f), Math.atan((cy - H / 2) / f), size / f]), [1, 3]),
       crop_box: new ort.Tensor("float32", Float32Array.from([ix1, iy1, ix2 - ix1, iy2 - iy1]), [1, 4]),
       cam: new ort.Tensor("float32", Float32Array.from([f, W / 2, H / 2]), [1, 3]),
-    });
+    };
+    let o;
+    if (this.backend === "webgpu") {
+      // A failing GPU can reject the run or never answer at all: give up after a timeout (longer for the first
+      // runs, which compile the shaders) and let the caller switch to the CPU (switchToCpu) and retry the frame.
+      const limitMs = (this.gpuRuns || 0) < 2 ? 90000 : 20000;
+      let timer;
+      try {
+        o = await Promise.race([
+          this.hmr.run(feeds),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`GPUの応答がありません (${limitMs / 1000}秒)`)), limitMs); }),
+        ]);
+      } catch (e) {
+        const err = new Error(`GPU推論に失敗しました: ${e?.message || e}`);
+        err.gpuFailure = true;
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
+      this.gpuRuns = (this.gpuRuns || 0) + 1;
+    } else {
+      o = await this.hmr.run(feeds);
+    }
     // Re-wrap with the declared shapes: some WebGPU kernels report a transposed shape for these outputs.
     const mhrParams = Float32Array.from(o.mhr_params.data);
     const shapeParams = Float32Array.from(o.shape_params.data);
