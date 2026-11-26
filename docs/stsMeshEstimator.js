@@ -10,6 +10,8 @@
  *   worldLandmarks MediaPipe Pose index -> {x, y, z, visibility}, metres, hip-centred, y down (MediaPipe convention)
  *   vertices       Float32Array(18439 * 3), metres, body-local frame (same frame as joints3d)
  *   joints3d       Float32Array(70 * 3), metres, body-local frame
+ *   meshCom        whole-body centre of mass of the mesh volume (uniform density):
+ *                  {world: {x, y, z} in the worldLandmarks frame, image: {x, y} normalised, volumeM3}
  *
  * Model: InstantHMR medium + kinematic fit on one crop, converted for onnxruntime-web
  * (scripts/convert_instanthmr_web.py). Weights: SAM License, non-commercial use only (see web/licenses/).
@@ -185,7 +187,18 @@ export class StsMeshEstimator {
       landmarks[p] = { x: r.joints2d[k * 2] / W, y: r.joints2d[k * 2 + 1] / H };
       worldLandmarks[p] = { x: j[k * 3] - hip[0], y: j[k * 3 + 1] - hip[1], z: j[k * 3 + 2] - hip[2], visibility: 0.99 };
     }
-    return { landmarks, worldLandmarks, vertices: r.vertices, joints3d: r.joints3d, camTrans: r.camTrans,
+    const c = meshCenterOfMass(r.vertices, this.faces);
+    let meshCom = null;
+    if (c) {
+      const zc = c.com[2] + r.camTrans[2];
+      meshCom = {
+        world: { x: c.com[0] - hip[0], y: c.com[1] - hip[1], z: c.com[2] - hip[2] },
+        image: zc > 0.05 ? { x: (r.focal * (c.com[0] + r.camTrans[0]) / zc + W / 2) / W,
+                             y: (r.focal * (c.com[1] + r.camTrans[1]) / zc + H / 2) / H } : null,
+        volumeM3: c.volume
+      };
+    }
+    return { landmarks, worldLandmarks, vertices: r.vertices, joints3d: r.joints3d, camTrans: r.camTrans, meshCom,
              mhrParams: r.mhrParams, shapeParams: r.shapeParams, focalPx: r.focal, ms };
   }
 
@@ -233,6 +246,27 @@ export class StsMeshEstimator {
       mhrParams, shapeParams,
     };
   }
+}
+
+/**
+ * Centre of mass of the solid the mesh encloses, at uniform density, and its volume (m^3).
+ * The MHR mesh is closed and manifold, so the signed tetrahedra from the origin to each face sum to the body.
+ * Returns null if the mesh does not enclose a positive volume.
+ */
+export function meshCenterOfMass(vertices, faces) {
+  if (!vertices || !faces) return null;
+  let v6 = 0, cx = 0, cy = 0, cz = 0;
+  for (let f = 0; f < faces.length; f += 3) {
+    const a = faces[f] * 3, b = faces[f + 1] * 3, c = faces[f + 2] * 3;
+    const ax = vertices[a], ay = vertices[a + 1], az = vertices[a + 2];
+    const bx = vertices[b], by = vertices[b + 1], bz = vertices[b + 2];
+    const qx = vertices[c], qy = vertices[c + 1], qz = vertices[c + 2];
+    const d = ax * (by * qz - bz * qy) - ay * (bx * qz - bz * qx) + az * (bx * qy - by * qx);
+    v6 += d;
+    cx += d * (ax + bx + qx); cy += d * (ay + by + qy); cz += d * (az + bz + qz);
+  }
+  if (!(v6 > 1e-9)) return null;
+  return { com: [cx / (4 * v6), cy / (4 * v6), cz / (4 * v6)], volume: v6 / 6 };
 }
 
 /** pipeline.keypoint_box: the body keypoints' extent, padded, shrunk to a detector's framing, clipped. */
