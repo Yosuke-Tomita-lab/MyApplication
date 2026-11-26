@@ -878,12 +878,12 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_8";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_8";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_8";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_8";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_8";
-    import { computeMarginOfStability } from "./stsStability.js?v=20261126_8";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_9";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_9";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_9";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_9";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_9";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_9";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -1542,6 +1542,13 @@
     function grfDisplayWindows() {
       if (!analysisResult) return [];
       const is30 = analysisResult.mode.id === "THIRTY_SECONDS";
+      // 通常立ち上がり（1回）: 立位のまま足だけで体重を支えるので、離臀から動画の終わりまで表示する。
+      // 5回・30秒: 次の着座で座面にも荷重がかかるため、各試行の立位安定（30秒は立位終了）の少し後まで。
+      if (analysisResult.mode.id === "SINGLE") {
+        const fr = analysisResult.frames;
+        const lastMs = fr.length ? fr[fr.length - 1].timestampMs : 0;
+        return analysisResult.trials.map(t => [t.seatOffTimeMs, Math.max(lastMs, t.stableTimeMs + 500)]);
+      }
       return analysisResult.trials.map(t => [t.seatOffTimeMs, is30 ? t.standEndTimeMs + 1000 : t.stableTimeMs + 500]);
     }
     function applyGrfToViewer() {
