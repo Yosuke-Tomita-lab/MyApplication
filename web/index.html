@@ -314,16 +314,16 @@
         </div>
       </div>
 
-      <!-- STEP 3: Video & LiDAR Input -->
+      <!-- STEP 3: Video Input -->
       <div class="pt-2 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
         <div class="flex items-center gap-2">
           <span class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">2</span>
           <div>
             <div class="text-xs font-bold text-slate-900 flex items-center gap-2 flex-wrap">
-              <span>動画ファイル ＆ LiDAR 連携</span>
+              <span>動画ファイル</span>
               <span id="lidarStatusBadge" class="hidden text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                LiDAR実測深度 連動中
+                iPad Pro LiDAR実測連動中
               </span>
             </div>
             <div class="text-[11px] text-slate-400 mt-0.5">動画のみで解析可能 / 解析エンジン「高精度メッシュ」で人体メッシュから重心を算出</div>
@@ -340,7 +340,6 @@
           </label>
           <input type="file" id="videoFileInput" accept="video/*" class="sr-only">
           <input type="file" id="cameraDirectInput" accept="video/*" capture="environment" class="sr-only">
-          <input type="file" id="lidarFileInput" accept=".json,.csv,video/*" class="sr-only">
 
           <button id="directCameraBtn" type="button" class="cursor-pointer px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md shadow-emerald-200 transition flex items-center gap-1.5" title="iPadのカメラを起動してその場で撮影">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -352,14 +351,6 @@
             <span id="selectVideoBtnText">動画を選択</span>
           </button>
 
-          <button id="selectLidarBtn" type="button" class="cursor-pointer px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition flex items-center gap-1" title="iPhone/iPad等のLiDAR深度データ(JSON/CSV)を追加">
-            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
-            <span id="selectLidarBtnText">+ LiDAR</span>
-          </button>
-
-          <button id="clearLidarBtn" type="button" class="hidden text-slate-400 hover:text-rose-500 p-1.5 text-xs" title="LiDARデータを解除">
-            &times;
-          </button>
         </div>
       </div>
     </div>
@@ -898,33 +889,8 @@
       meshToggleLabel.classList.toggle("hidden", !meshSequence);
       meshToggleLabel.classList.toggle("inline-flex", !!meshSequence);
     }
-    // LiDAR Depth Controls
-    let rawLidarFrames = null;
-    const lidarFileInput = document.getElementById("lidarFileInput");
-    const selectLidarBtn = document.getElementById("selectLidarBtn");
-    const selectLidarBtnText = document.getElementById("selectLidarBtnText");
-    const lidarStatusBadge = document.getElementById("lidarStatusBadge");
-    const clearLidarBtn = document.getElementById("clearLidarBtn");
-
-    if (selectLidarBtn) {
-      selectLidarBtn.onclick = () => lidarFileInput.click();
-    }
-
-    if (clearLidarBtn) {
-      clearLidarBtn.onclick = () => {
-        rawLidarFrames = null;
-        if (lidarFileInput) lidarFileInput.value = "";
-        if (lidarStatusBadge) lidarStatusBadge.classList.add("hidden");
-        if (clearLidarBtn) clearLidarBtn.classList.add("hidden");
-        if (selectLidarBtnText) selectLidarBtnText.innerText = "+ LiDAR深度追加";
-        if (selectLidarBtn) selectLidarBtn.classList.remove("bg-emerald-50", "border-emerald-300", "text-emerald-700");
-        if (rawExtractedFrames.length >= 5) {
-          runFullAnalysis();
-        }
-      };
-    }
-
     // Native iOS App (iPad Pro ARKit + LiDAR) 一括測定ブリッジ
+    const lidarStatusBadge = document.getElementById("lidarStatusBadge");
     window.loadNativeARKitData = function(jsonStr, modeStr) {
       try {
         const frames = (typeof jsonStr === "string") ? JSON.parse(jsonStr) : jsonStr;
@@ -976,256 +942,6 @@
         console.error("Failed to load native ARKit data:", err);
       }
     };
-
-    // LiDAR Data Parser (JSON & CSV & Summary)
-    function parseLidarContent(text, fileName) {
-      const trimmed = text.trim();
-      const isJson = fileName.toLowerCase().endsWith('.json') || trimmed.startsWith('{') || trimmed.startsWith('[');
-      if (isJson) {
-        return parseLidarJson(trimmed);
-      } else {
-        return parseLidarCsv(trimmed);
-      }
-    }
-
-    function parseLidarJson(jsonText) {
-      const parsed = JSON.parse(jsonText);
-      let records = [];
-      if (Array.isArray(parsed)) {
-        records = parsed;
-      } else if (parsed.frames && Array.isArray(parsed.frames)) {
-        records = parsed.frames;
-      } else if (parsed.data && Array.isArray(parsed.data)) {
-        records = parsed.data;
-      } else if (parsed.records && Array.isArray(parsed.records)) {
-        records = parsed.records;
-      } else {
-        throw new Error("JSON内に有効なフレーム配列(frames/data/records)が見つかりません。");
-      }
-
-      const results = [];
-      const nameMap = {
-        shoulder_l: 11, shoulder_r: 12, shoulder: 11,
-        elbow_l: 13, elbow_r: 14,
-        wrist_l: 15, wrist_r: 16,
-        hip_l: 23, hip_r: 24, hip: 23,
-        knee_l: 25, knee_r: 26, knee: 25,
-        ankle_l: 27, ankle_r: 28, ankle: 27,
-        heel_l: 29, heel_r: 30,
-        foot_l: 31, foot_r: 32, foot: 31,
-        head: 0, nose: 0
-      };
-
-      records.forEach((rec, idx) => {
-        let tMs = 0;
-        if (typeof rec.timestampMs === 'number') {
-          tMs = rec.timestampMs;
-        } else if (typeof rec.timeMs === 'number') {
-          tMs = rec.timeMs;
-        } else if (typeof rec.time === 'number') {
-          tMs = Math.round(rec.time * 1000);
-        } else if (typeof rec.timestamp === 'number') {
-          tMs = rec.timestamp < 10000 ? Math.round(rec.timestamp * 1000) : rec.timestamp;
-        } else {
-          tMs = Math.round(idx * (1000.0 / 30.0));
-        }
-
-        const jointDepths = {};
-        const rawJoints = rec.joints || rec.depths || rec.landmarks || rec;
-
-        if (rawJoints && typeof rawJoints === 'object') {
-          for (const [k, v] of Object.entries(rawJoints)) {
-            const numKey = parseInt(k, 10);
-            const val = typeof v === 'number' ? v : (v && typeof v.z === 'number' ? v.z : (v && typeof v.depth === 'number' ? v.depth : null));
-            if (val !== null && !isNaN(val)) {
-              if (!isNaN(numKey)) {
-                jointDepths[numKey] = val;
-              } else {
-                const lk = k.toLowerCase().replace(/[^a-z0-9_]/g, '');
-                for (const [pattern, targetId] of Object.entries(nameMap)) {
-                  if (lk.includes(pattern)) {
-                    jointDepths[targetId] = val;
-                    break;
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        const baseDepth = typeof rec.depth === 'number' ? rec.depth : (typeof rec.distance === 'number' ? rec.distance : null);
-
-        results.push({
-          timestampMs: tMs,
-          jointDepths,
-          baseDepth
-        });
-      });
-
-      results.sort((a, b) => a.timestampMs - b.timestampMs);
-      return results;
-    }
-
-    function parseLidarCsv(csvText) {
-      const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
-      if (lines.length < 2) throw new Error("CSV行数が不足しています。");
-
-      const header = lines[0].split(',').map(h => h.trim().toLowerCase());
-      let timeCol = header.findIndex(h => h.includes('time') || h.includes('timestamp') || h === 't' || h === 'sec');
-
-      const jointColMap = {};
-      const nameMap = {
-        'shoulder_l': 11, 'shoulder_r': 12, 'shoulder': 11,
-        'hip_l': 23, 'hip_r': 24, 'hip': 23,
-        'knee_l': 25, 'knee_r': 26, 'knee': 25,
-        'ankle_l': 27, 'ankle_r': 28, 'ankle': 27,
-        'foot_l': 31, 'foot_r': 32, 'foot': 31
-      };
-
-      header.forEach((col, idx) => {
-        const numMatch = col.match(/(?:z|depth)[\-_]?(\d+)/) || col.match(/^(\d+)$/);
-        if (numMatch) {
-          jointColMap[parseInt(numMatch[1], 10)] = idx;
-        } else {
-          for (const [pattern, targetId] of Object.entries(nameMap)) {
-            if (col.includes(pattern)) {
-              jointColMap[targetId] = idx;
-              break;
-            }
-          }
-        }
-      });
-
-      const results = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => parseFloat(c.trim()));
-        if (cols.some(c => !isNaN(c))) {
-          let tMs = 0;
-          if (timeCol >= 0 && !isNaN(cols[timeCol])) {
-            const val = cols[timeCol];
-            tMs = val < 1000 ? Math.round(val * 1000) : Math.round(val);
-          } else {
-            tMs = Math.round((i - 1) * (1000.0 / 30.0));
-          }
-
-          const jointDepths = {};
-          for (const [jointId, colIdx] of Object.entries(jointColMap)) {
-            const val = cols[colIdx];
-            if (!isNaN(val)) {
-              jointDepths[parseInt(jointId, 10)] = val;
-            }
-          }
-
-          results.push({
-            timestampMs: tMs,
-            jointDepths,
-            baseDepth: cols[1] && !isNaN(cols[1]) ? cols[1] : null
-          });
-        }
-      }
-
-      results.sort((a, b) => a.timestampMs - b.timestampMs);
-      return results;
-    }
-
-    // LiDAR 深度フュージョン適用関数
-    function applyLidarFusionToRawFrames(rawFrames, lidarData) {
-      if (!lidarData || lidarData.length === 0 || !rawFrames || rawFrames.length === 0) {
-        return rawFrames;
-      }
-
-      const l0 = lidarData[0].timestampMs;
-      const f0 = rawFrames[0].timestampMs;
-      const tOffset = (l0 > 10000 && f0 < 1000) ? l0 - f0 : 0;
-
-      return rawFrames.map(frame => {
-        const queryTime = frame.timestampMs + tOffset;
-
-        // 最近傍探索
-        let bestLidar = lidarData[0];
-        let minDiff = Math.abs(lidarData[0].timestampMs - queryTime);
-        for (let j = 1; j < lidarData.length; j++) {
-          const diff = Math.abs(lidarData[j].timestampMs - queryTime);
-          if (diff < minDiff) {
-            minDiff = diff;
-            bestLidar = lidarData[j];
-          }
-          if (lidarData[j].timestampMs > queryTime && diff > minDiff) break;
-        }
-
-        if (!bestLidar) return frame;
-
-        const newWorldLm = {};
-        const origWlm = frame.worldLandmarks || {};
-
-        // 基準点深度: 足首(27,28)または腰(23,24)
-        const refJoints = [27, 28, 23, 24];
-        let refZ = null;
-        for (const rId of refJoints) {
-          if (bestLidar.jointDepths && typeof bestLidar.jointDepths[rId] === 'number') {
-            refZ = bestLidar.jointDepths[rId];
-            break;
-          }
-        }
-        if (refZ === null && typeof bestLidar.baseDepth === 'number') {
-          refZ = bestLidar.baseDepth;
-        }
-
-        for (const [idStr, pt] of Object.entries(origWlm)) {
-          const id = parseInt(idStr, 10);
-          let updatedZ = pt.z;
-
-          if (bestLidar.jointDepths && typeof bestLidar.jointDepths[id] === 'number') {
-            const rawLidarZ = bestLidar.jointDepths[id];
-            if (refZ !== null) {
-              // 実測相対深度 (カメラ方向への前傾・前進で生じるZ変位をミリ精度反映)
-              updatedZ = rawLidarZ - refZ;
-            }
-          } else if (refZ !== null && typeof bestLidar.baseDepth === 'number') {
-            updatedZ = pt.z * (bestLidar.baseDepth / 2.0);
-          }
-
-          newWorldLm[id] = new Point3D(pt.x, pt.y, updatedZ, pt.visibility);
-        }
-
-        return new PoseFrameData({
-          ...frame,
-          worldLandmarks: newWorldLm,
-          // LiDAR replaces the landmark depths, so the mesh CoM depth no longer shares their frame
-          meshCom: frame.meshCom ? { ...frame.meshCom, world: null } : null
-        });
-      });
-    }
-
-    if (lidarFileInput) {
-      lidarFileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        try {
-          const text = await file.text();
-          rawLidarFrames = parseLidarContent(text, file.name);
-
-          if (lidarStatusBadge) {
-            lidarStatusBadge.classList.remove("hidden");
-            lidarStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> LiDAR実測深度 連動中 (${rawLidarFrames.length}点)`;
-          }
-          if (clearLidarBtn) clearLidarBtn.classList.remove("hidden");
-          if (selectLidarBtnText) selectLidarBtnText.innerText = "LiDAR読込済";
-          if (selectLidarBtn) selectLidarBtn.classList.add("bg-emerald-50", "border-emerald-300", "text-emerald-700");
-
-          if (rawExtractedFrames.length >= 5) {
-            runFullAnalysis();
-          } else {
-            alert(`LiDAR実測深度データ（${rawLidarFrames.length}フレーム）を読み込みました。\n次に動画ファイルを選択して解析を開始してください。実測深度が自動フュージョンされます。`);
-          }
-        } catch (err) {
-          console.error("LiDAR parse error:", err);
-          alert("LiDAR深度データの解析に失敗しました: " + err.message);
-          if (clearLidarBtn) clearLidarBtn.click();
-        }
-      };
-    }
 
     const playPauseBtn = document.getElementById("playPauseBtn");
     const playIcon = document.getElementById("playIcon");
@@ -1772,13 +1488,8 @@
         ? parseInt(thirtySecRepsInput.value || 10)
         : null;
 
-      // LiDAR実測深度データがあればフュージョン適用
-      const effectiveFrames = (rawLidarFrames && rawLidarFrames.length > 0)
-        ? applyLidarFusionToRawFrames(rawExtractedFrames, rawLidarFrames)
-        : rawExtractedFrames;
-
       analysisResult = StsMetricCalculator.calculate({
-        rawFrames: effectiveFrames,
+        rawFrames: rawExtractedFrames,
         mode: currentMode,
         anthropometrics,
         isFrontCameraMirrored,
@@ -2758,7 +2469,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)')}</div>
+              <div><strong>システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : 'MediaPipe 3D (剛体骨長保存)'}</div>
             </div>
           </div>
 
@@ -2916,7 +2627,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>解析システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)')}</div>
+              <div><strong>解析システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : 'STS Analyzer (剛体骨長保存)'}</div>
             </div>
           </div>
 
