@@ -34,6 +34,8 @@ export class Sts3dViewer {
     this.meshSequence = null;
     this.bodyMesh = null;
     this.showMesh = true;
+    this.meshSmoothingMs = 120;
+    this.meshComDisplay = null;
 
     // Colors
     this.colors = {
@@ -293,16 +295,59 @@ export class Sts3dViewer {
       return;
     }
     this.meshSequence = { faces, frames };
+    this.meshShownKey = null;
     if (!this.bodyMesh) {
       const geo = new THREE.BufferGeometry();
       geo.setIndex(new THREE.BufferAttribute(faces, 1));
       geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(frames[0].vertices.length), 3));
-      const mat = new THREE.MeshStandardMaterial({ color: 0x8b7cf6, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
+      // Semi-transparent so the CoM marker inside the body stays visible. Front faces only and no depth writes,
+      // so the overlapping layers of the body (arms over the torso) do not flicker in and out.
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x8b7cf6, roughness: 0.55, metalness: 0.05, side: THREE.FrontSide,
+        transparent: true, opacity: 0.45, depthWrite: false
+      });
       this.bodyMesh = new THREE.Mesh(geo, mat);
+      this.bodyMesh.renderOrder = 1;
       this.bodyMesh.castShadow = true;
       this.scene.add(this.bodyMesh);
     }
     if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  /** Temporal smoothing of the displayed mesh: Gaussian sigma in milliseconds (0 = interpolate only). */
+  setMeshSmoothing(sigmaMs) {
+    this.meshSmoothingMs = Math.max(0, Number(sigmaMs) || 0);
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  /** [[frameIndex, weight], ...] summing to 1 for the mesh shown at `t`. */
+  meshFrameWeights(fr, t, sigma) {
+    let lo = 0, hi = fr.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (fr[mid].timestampMs < t) lo = mid + 1; else hi = mid;
+    }
+    // lo: first frame at or after t
+    if (sigma <= 0 || fr.length === 1) {
+      if (lo === 0 || fr[lo].timestampMs <= t) return [[lo, 1]];
+      const t0 = fr[lo - 1].timestampMs, t1 = fr[lo].timestampMs;
+      const a = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+      return [[lo - 1, 1 - a], [lo, a]];
+    }
+    const out = [];
+    let sum = 0;
+    const reach = 3 * sigma;
+    for (let k = lo; k < fr.length && fr[k].timestampMs - t <= reach; k++) {
+      const d = (fr[k].timestampMs - t) / sigma, w = Math.exp(-0.5 * d * d);
+      out.push([k, w]); sum += w;
+    }
+    for (let k = lo - 1; k >= 0 && t - fr[k].timestampMs <= reach; k--) {
+      const d = (fr[k].timestampMs - t) / sigma, w = Math.exp(-0.5 * d * d);
+      out.push([k, w]); sum += w;
+    }
+    if (out.length === 0 || sum <= 0) return [[Math.min(lo, fr.length - 1), 1]];
+    for (const e of out) e[1] /= sum;
+    return out;
   }
 
   setMeshVisible(show) {
@@ -324,27 +369,41 @@ export class Sts3dViewer {
     if (!active) return;
     this.setSkeletonVisible(false);
 
-    // Nearest mesh frame in time (binary search)
+    // Temporal smoothing: a Gaussian-weighted average of the frames around `timestampMs` (zero phase, so no lag).
+    // It also interpolates between the 25 fps analysis frames, so playback no longer steps from frame to frame.
     const fr = seq.frames;
-    let lo = 0, hi = fr.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (fr[mid].timestampMs < timestampMs) lo = mid + 1; else hi = mid;
-    }
-    if (lo > 0 && Math.abs(fr[lo - 1].timestampMs - timestampMs) < Math.abs(fr[lo].timestampMs - timestampMs)) lo--;
-    const f = fr[lo];
-    if (this.meshShownIndex === lo && this.meshShownMirrored === this.isMirrored) return;
-    this.meshShownIndex = lo;
-    this.meshShownMirrored = this.isMirrored;
+    const sigma = this.meshSmoothingMs;
+    const key = `${timestampMs}|${sigma}|${this.isMirrored}`;
+    if (this.meshShownKey === key) return;
+    this.meshShownKey = key;
 
-    // Same placement as transformWorldPoint: ankles at the origin, feet on the floor, y up, z towards the viewer
-    const v = f.vertices, [ax, ay, az] = f.ankle, sx = this.isMirrored ? -1 : 1;
+    const weights = this.meshFrameWeights(fr, timestampMs, sigma);
+
+    // Same placement as transformWorldPoint: ankles at the origin, feet on the floor, y up, z towards the viewer.
+    // Each frame is taken relative to its own mid-ankle before averaging, as the unsmoothed mesh was placed.
+    const sx = this.isMirrored ? -1 : 1;
+    // Mirroring flips the triangle winding, so the outside of the body is then the back side
+    const side = this.isMirrored ? THREE.BackSide : THREE.FrontSide;
+    if (this.bodyMesh.material.side !== side) { this.bodyMesh.material.side = side; this.bodyMesh.material.needsUpdate = true; }
     const pos = this.bodyMesh.geometry.attributes.position.array;
-    for (let i = 0; i < v.length; i += 3) {
-      pos[i] = sx * (v[i] - ax);
-      pos[i + 1] = (ay - v[i + 1]) + 0.05;
-      pos[i + 2] = -(v[i + 2] - az);
+    pos.fill(0);
+    let cx = 0, cy = 0, cz = 0, cw = 0;
+    for (const [k, w] of weights) {
+      const v = fr[k].vertices, [ax, ay, az] = fr[k].ankle;
+      for (let i = 0; i < v.length; i += 3) {
+        pos[i] += w * (v[i] - ax);
+        pos[i + 1] += w * (ay - v[i + 1]);
+        pos[i + 2] += w * (az - v[i + 2]);
+      }
+      const c = fr[k].com;
+      if (c) { cx += w * (c[0] - ax); cy += w * (ay - c[1]); cz += w * (az - c[2]); cw += w; }
     }
+    for (let i = 0; i < pos.length; i += 3) {
+      pos[i] *= sx;
+      pos[i + 1] += 0.05;
+    }
+    // Centre of mass with the same smoothing, so the marker stays where it belongs inside the mesh
+    this.meshComDisplay = cw > 0 ? new THREE.Vector3(sx * cx / cw, Math.max(0.01, cy / cw + 0.05), cz / cw) : null;
     const geo = this.bodyMesh.geometry;
     geo.attributes.position.needsUpdate = true;
     geo.computeVertexNormals();
@@ -906,8 +965,12 @@ export class Sts3dViewer {
       this.torsoMesh.visible = false;
     }
 
-    // 5. Update CoM Visualizer
-    const comPos = this.getFrameCom3D(frame);
+    // 5. InstantHMR body mesh (before the CoM, which follows the smoothed mesh when it is shown)
+    this.updateMesh(frame.timestampMs);
+
+    // 6. Update CoM Visualizer
+    const meshShown = !!(this.meshSequence && this.showMesh && this.bodyMesh && this.bodyMesh.visible);
+    const comPos = (meshShown && this.meshComDisplay) ? this.meshComDisplay.clone() : this.getFrameCom3D(frame);
     if (comPos) {
       this.comSphere.position.copy(comPos);
       this.comFloorMarker.position.set(comPos.x, 0.002, comPos.z);
@@ -924,8 +987,6 @@ export class Sts3dViewer {
       this.comProjectorLine.visible = true;
     }
 
-    // 6. InstantHMR body mesh
-    this.updateMesh(frame.timestampMs);
   }
 
   positionCylinderBetweenPoints(mesh, p1, p2) {

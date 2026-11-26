@@ -393,6 +393,13 @@
             <label id="meshToggleLabel" class="hidden items-center gap-1 mr-2 text-slate-600 font-medium cursor-pointer" title="InstantHMRの人体メッシュと骨格表示を切り替えます">
               <input type="checkbox" id="meshToggle" checked class="rounded text-indigo-600 w-3.5 h-3.5">
               <span>人体メッシュ</span>
+              <select id="meshSmoothingSelect" class="ml-1 bg-white border border-slate-300 rounded-md px-1 py-0.5 text-[11px] text-slate-700" title="メッシュ表示の時間方向スムージング（表示のみ。解析値には影響しません）">
+                <option value="0">平滑化なし</option>
+                <option value="40">平滑化 弱</option>
+                <option value="80">平滑化 中</option>
+                <option value="120" selected>平滑化 強</option>
+                <option value="200">平滑化 最強</option>
+              </select>
             </label>
             <span class="text-slate-400 mr-1 font-medium">3D視点:</span>
             <button id="camSagittalBtn" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition" title="矢状面（側面から前傾・屈伸を観察）">
@@ -819,9 +826,9 @@
   <!-- App Script (ES Module) -->
   <script type="module">
     import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_2";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_2";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_3";
     import { StsCsvExporter } from "./stsExporter.js?v=20261126_2";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_2";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_4";
     import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_2";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
@@ -862,7 +869,7 @@
     const meshToggle = document.getElementById("meshToggle");
     const meshToggleLabel = document.getElementById("meshToggleLabel");
     let meshEstimator = null;
-    let meshSequence = null;          // { faces, frames: [{ timestampMs, vertices, ankle }] } of the last InstantHMR run
+    let meshSequence = null;          // { faces, frames: [{ timestampMs, vertices, ankle, com }] } of the last InstantHMR run
     let activePoseEngine = "mediapipe";
     try {
       const saved = localStorage.getItem("sts.poseEngine");
@@ -872,9 +879,19 @@
       try { localStorage.setItem("sts.poseEngine", poseEngineSelect.value); } catch (e) { /* storage unavailable */ }
     });
     meshToggle.addEventListener("change", () => { if (sts3dViewer) sts3dViewer.setMeshVisible(meshToggle.checked); });
+    const meshSmoothingSelect = document.getElementById("meshSmoothingSelect");
+    try {
+      const savedSmooth = localStorage.getItem("sts.meshSmoothingMs");
+      if (savedSmooth && meshSmoothingSelect.querySelector(`option[value="${savedSmooth}"]`)) meshSmoothingSelect.value = savedSmooth;
+    } catch (e) { /* storage unavailable */ }
+    meshSmoothingSelect.addEventListener("change", () => {
+      try { localStorage.setItem("sts.meshSmoothingMs", meshSmoothingSelect.value); } catch (e) { /* storage unavailable */ }
+      if (sts3dViewer) sts3dViewer.setMeshSmoothing(meshSmoothingSelect.value);
+    });
 
     function applyMeshSequenceToViewer() {
       if (!sts3dViewer) return;
+      sts3dViewer.setMeshSmoothing(meshSmoothingSelect.value);
       if (meshSequence) sts3dViewer.setMeshSequence(meshSequence.faces, meshSequence.frames);
       else sts3dViewer.setMeshSequence(null, null);
       sts3dViewer.setMeshVisible(meshToggle.checked);
@@ -1706,10 +1723,13 @@
             for (const [k, p] of Object.entries(r.worldLandmarks)) worldLmMap[k] = new Point3D(p.x, p.y, p.z, p.visibility);
             meshCom = r.meshCom;
             const j = r.joints3d;   // MHR keypoints 13/14 = left/right ankle
+            const hip = [0, 1, 2].map((a) => (j[9 * 3 + a] + j[10 * 3 + a]) / 2);
+            const w = meshCom?.world;
             meshFrames.push({
               timestampMs: timeMs,
               vertices: r.vertices,
-              ankle: [0, 1, 2].map((a) => (j[13 * 3 + a] + j[14 * 3 + a]) / 2)
+              ankle: [0, 1, 2].map((a) => (j[13 * 3 + a] + j[14 * 3 + a]) / 2),
+              com: w ? [w.x + hip[0], w.y + hip[1], w.z + hip[2]] : null   // body-local, like vertices
             });
           } catch (e) {
             console.warn(`InstantHMR frame warning at ${timeMs}ms:`, e);

@@ -289,7 +289,12 @@ export class StsMetricCalculator {
 
     // --- 3D・矢状面 (Sagittal Plane) 新規指標算出 ---
     // 1. 離臀時の重心と支持基底面（足首マーカー）との前後距離 [cm]
-    const comAnkleApDistanceAtSeatOffCm = Math.max(0.5, Math.abs(fSeat.comZ - fSeat.midAnkleZ) * 100.0);
+    //    The ankle estimate wobbles by about 1-2 cm from frame to frame, so take the median CoM-ankle distance of the
+    //    frames within ±100 ms of seat-off instead of the single seat-off frame. (comZ and midAnkleZ are hip-centred,
+    //    so their difference, not the ankle position alone, is what stays comparable between frames.)
+    const seatWindow = frames.filter(f => Math.abs(f.timestampMs - fSeat.timestampMs) <= 100)
+      .map(f => f.comZ - f.midAnkleZ);
+    const comAnkleApDistanceAtSeatOffCm = Math.max(0.5, Math.abs(this.median(seatWindow.length > 0 ? seatWindow : [fSeat.comZ - fSeat.midAnkleZ])) * 100.0);
 
     // 2. 前傾速度（開始〜離臀までの最大前傾角速度 [deg/s]）
     let maxPitchVel = 0.0;
@@ -660,6 +665,12 @@ export class StsMetricCalculator {
       }
     }
     return out;
+  }
+
+  static median(values) {
+    const a = [...values].sort((x, y) => x - y);
+    const m = a.length >> 1;
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
   }
 
   static calculateAngleBetweenVectors(v1, v2) {
