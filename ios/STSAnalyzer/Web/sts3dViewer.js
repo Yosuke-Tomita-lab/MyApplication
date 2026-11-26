@@ -4,6 +4,9 @@
  * base of support projection, and chair in sagittal/frontal/3D views.
  */
 
+/** Length of a ground reaction force arrow of one body weight, in metres. */
+const GRF_BW_LENGTH = 0.9;
+
 export class Sts3dViewer {
   constructor(containerElement) {
     this.container = containerElement;
@@ -36,6 +39,12 @@ export class Sts3dViewer {
     this.showMesh = true;
     this.meshSmoothingMs = 120;
     this.meshComDisplay = null;
+
+    // Estimated ground reaction force arrows (whole body + left/right foot)
+    this.grfArrows = null;
+    this.showGrf = true;
+    this.grfWindows = [];        // [[startMs, endMs], ...] when the feet carry the body (seat-off to stable)
+    this.grfBodyWeightN = 0;
 
     // Colors
     this.colors = {
@@ -312,6 +321,85 @@ export class Sts3dViewer {
       this.scene.add(this.bodyMesh);
     }
     if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  /**
+   * Ground reaction force arrows. `windows` are [[startMs, endMs], ...] in which they are shown: from seat-off,
+   * when the feet carry the whole body, to the end of the trial. Before seat-off part of the weight is on the seat,
+   * which the CoM-based estimate cannot separate. `bodyWeightN` sets the scale (1 BW = GRF_BW_LENGTH metres).
+   */
+  setGrfDisplay(windows, bodyWeightN) {
+    this.grfWindows = windows || [];
+    this.grfBodyWeightN = bodyWeightN || 0;
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  setGrfVisible(show) {
+    this.showGrf = !!show;
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  buildGrfArrows() {
+    const make = (color, opacity) => {
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.4, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 16), mat);
+      const head = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 20), mat);
+      const g = new THREE.Group();
+      g.add(shaft, head);
+      g.renderOrder = opacity < 1 ? 2 : 0;
+      g.visible = false;
+      this.scene.add(g);
+      return { group: g, shaft, head, radius: opacity < 1 ? 0.014 : 0.02 };
+    };
+    this.grfArrows = {
+      total: make(0xef4444, 1.0),   // 合力: red, solid
+      left: make(0x3b82f6, 0.45),   // 左足: blue, semi-transparent
+      right: make(0xf97316, 0.45)   // 右足: orange, semi-transparent
+    };
+  }
+
+  /** Place arrow `a` from `origin` along `vec` (viewer coordinates, metres). */
+  placeGrfArrow(a, origin, vec) {
+    const len = vec.length();
+    if (len < 0.01) { a.group.visible = false; return; }
+    const headLen = Math.min(0.08, len * 0.35), shaftLen = len - headLen;
+    a.shaft.scale.set(a.radius, shaftLen, a.radius);
+    a.shaft.position.set(0, shaftLen / 2, 0);
+    a.head.scale.set(a.radius * 2.6, headLen, a.radius * 2.6);
+    a.head.position.set(0, shaftLen + headLen / 2, 0);
+    a.group.position.copy(origin);
+    a.group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vec.clone().normalize());
+    a.group.visible = true;
+  }
+
+  updateGrfArrows(frame, joints) {
+    if (!this.grfArrows) this.buildGrfArrows();
+    const arrows = this.grfArrows;
+    const hide = () => Object.values(arrows).forEach((a) => { a.group.visible = false; });
+    const t = frame.timestampMs;
+    const g = frame.grfVector;
+    if (!this.showGrf || !g || !(this.grfBodyWeightN > 0) || !joints ||
+        !this.grfWindows.some(([a, b]) => t >= a && t <= b)) return hide();
+
+    // Foot centres: midway between ankle and toe, on the floor
+    const foot = (ank, toe) => {
+      const p = joints[ank], q = joints[toe] || joints[ank];
+      return p ? new THREE.Vector3((p.x + q.x) / 2, 0.004, (p.z + q.z) / 2) : null;
+    };
+    const lFoot = foot(27, 31), rFoot = foot(28, 32);
+    if (!lFoot || !rFoot) return hide();
+
+    // World axes -> viewer: x mirrored like the joints, y up, z towards the viewer
+    const scale = GRF_BW_LENGTH / this.grfBodyWeightN;
+    const sx = this.isMirrored ? -1 : 1;
+    const total = new THREE.Vector3(sx * g.x * scale, g.y * scale, -g.z * scale);
+    // Split between the feet by the left/right load share (the same share as the bias graph)
+    const fl = Math.max(0, Math.min(1, (frame.leftBiasPercent ?? 50) / 100));
+    const cop = new THREE.Vector3().addScaledVector(lFoot, fl).addScaledVector(rFoot, 1 - fl);
+
+    this.placeGrfArrow(arrows.total, cop, total);
+    this.placeGrfArrow(arrows.left, lFoot, total.clone().multiplyScalar(fl));
+    this.placeGrfArrow(arrows.right, rFoot, total.clone().multiplyScalar(1 - fl));
   }
 
   /** Temporal smoothing of the displayed mesh: Gaussian sigma in milliseconds (0 = interpolate only). */
@@ -964,6 +1052,9 @@ export class Sts3dViewer {
     } else {
       this.torsoMesh.visible = false;
     }
+
+    // 4b. Ground reaction force arrows
+    this.updateGrfArrows(frame, joints);
 
     // 5. InstantHMR body mesh (before the CoM, which follows the smoothed mesh when it is shown)
     this.updateMesh(frame.timestampMs);
