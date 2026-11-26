@@ -56,3 +56,18 @@ python -m http.server 8080
 1. Vercel または Cloudflare Pages に本リポジトリを連携。
 2. Root Directory を `web` に指定してデプロイ。
 3. 即座にカスタムドメイン付きのHTTPSサイトとして全世界に公開されます。
+
+---
+
+## 🧍 高精度メッシュ解析（InstantHMR）
+
+STEP 2 の「解析エンジン」で **高精度メッシュ（InstantHMR）** を選ぶと、MediaPipe の代わりに
+[InstantHMR](https://huggingface.co/momolesang/InstantHMR) で人体メッシュ（Meta MHR、18,439頂点）と関節を推定します。
+推定は**ブラウザ内だけ**で行い、動画は外部に送信されません。
+
+- **実行方式**: WebGPU が使える端末では GPU、使えない端末では CPU（WASM）で動きます。
+- **モデル**: 初回のみ約145MBを [Hugging Face (yomita/instanthmr-web)](https://huggingface.co/yomita/instanthmr-web) から読み込み、以降はブラウザのキャッシュを使います。
+  ブラウザ向けの変換は `scripts/convert_instanthmr_web.py` で再現できます。
+- **出力**: 関節は MediaPipe Pose と同じ33点の番号に変換されるため、イベント検出・グラフ・CSV出力はそのまま使えます。3D表示では「人体メッシュ」で骨格表示と切り替えられます。
+- **ライセンス**: 重みは [SAM License](licenses/LICENSE-SAM.txt)。`medium` モデルは学習画像の条件により**非商用利用のみ**です。体モデル MHR は [Apache-2.0](licenses/LICENSE-MHR-Apache-2.0.txt)。
+- **注意**: 正面から撮影した動画では、前後方向（奥行き）の値は単眼推定のため誤差が大きくなります。矢状面の指標は側方からの撮影を推奨します。

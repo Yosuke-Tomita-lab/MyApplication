@@ -30,6 +30,11 @@ export class Sts3dViewer {
     this.isMirrored = false;
     this.rigidBoneLengths = null;
 
+    // InstantHMR body mesh (optional): faces + per-frame vertices, shown instead of the capsule skeleton
+    this.meshSequence = null;
+    this.bodyMesh = null;
+    this.showMesh = true;
+
     // Colors
     this.colors = {
       right: 0x0284c7, // Sky Blue
@@ -274,6 +279,76 @@ export class Sts3dViewer {
     });
     this.comFloorTrajectoryLine = new THREE.Line(floorTrajGeo, floorTrajMat);
     this.scene.add(this.comFloorTrajectoryLine);
+  }
+
+  /**
+   * Body mesh from StsMeshEstimator. `frames` is [{ timestampMs, vertices: Float32Array (body-local, metres, y down),
+   * ankle: [x, y, z] (mid-ankle in the same frame) }], sorted by time; pass null to go back to the skeleton.
+   */
+  setMeshSequence(faces, frames) {
+    if (!faces || !frames || frames.length === 0) {
+      this.meshSequence = null;
+      if (this.bodyMesh) this.bodyMesh.visible = false;
+      this.setSkeletonVisible(true);
+      return;
+    }
+    this.meshSequence = { faces, frames };
+    if (!this.bodyMesh) {
+      const geo = new THREE.BufferGeometry();
+      geo.setIndex(new THREE.BufferAttribute(faces, 1));
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(frames[0].vertices.length), 3));
+      const mat = new THREE.MeshStandardMaterial({ color: 0x8b7cf6, roughness: 0.55, metalness: 0.05, side: THREE.DoubleSide });
+      this.bodyMesh = new THREE.Mesh(geo, mat);
+      this.bodyMesh.castShadow = true;
+      this.scene.add(this.bodyMesh);
+    }
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  setMeshVisible(show) {
+    this.showMesh = !!show;
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  setSkeletonVisible(show) {
+    Object.values(this.jointMeshes).forEach((m) => { m.visible = m.visible && show; });
+    this.boneConnections.forEach(({ mesh }) => { mesh.visible = mesh.visible && show; });
+    if (this.headMesh) this.headMesh.visible = this.headMesh.visible && show;
+    if (this.torsoMesh) this.torsoMesh.visible = this.torsoMesh.visible && show;
+  }
+
+  updateMesh(timestampMs) {
+    const seq = this.meshSequence;
+    const active = !!(seq && this.showMesh && this.bodyMesh);
+    if (this.bodyMesh) this.bodyMesh.visible = active;
+    if (!active) return;
+    this.setSkeletonVisible(false);
+
+    // Nearest mesh frame in time (binary search)
+    const fr = seq.frames;
+    let lo = 0, hi = fr.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (fr[mid].timestampMs < timestampMs) lo = mid + 1; else hi = mid;
+    }
+    if (lo > 0 && Math.abs(fr[lo - 1].timestampMs - timestampMs) < Math.abs(fr[lo].timestampMs - timestampMs)) lo--;
+    const f = fr[lo];
+    if (this.meshShownIndex === lo && this.meshShownMirrored === this.isMirrored) return;
+    this.meshShownIndex = lo;
+    this.meshShownMirrored = this.isMirrored;
+
+    // Same placement as transformWorldPoint: ankles at the origin, feet on the floor, y up, z towards the viewer
+    const v = f.vertices, [ax, ay, az] = f.ankle, sx = this.isMirrored ? -1 : 1;
+    const pos = this.bodyMesh.geometry.attributes.position.array;
+    for (let i = 0; i < v.length; i += 3) {
+      pos[i] = sx * (v[i] - ax);
+      pos[i + 1] = (ay - v[i + 1]) + 0.05;
+      pos[i + 2] = -(v[i + 2] - az);
+    }
+    const geo = this.bodyMesh.geometry;
+    geo.attributes.position.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
   }
 
   loadFrames(frames) {
@@ -834,6 +909,9 @@ export class Sts3dViewer {
       this.comFloorMarker.visible = true;
       this.comProjectorLine.visible = true;
     }
+
+    // 6. InstantHMR body mesh
+    this.updateMesh(frame.timestampMs);
   }
 
   positionCylinderBetweenPoints(mesh, p1, p2) {

@@ -335,6 +335,13 @@
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
+          <label class="flex items-center gap-1.5 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5" title="高精度メッシュはInstantHMR（MHR人体メッシュ）をブラウザ内で実行します。初回のみモデル約145MBを読み込みます。">
+            <span class="font-semibold text-slate-700">解析エンジン</span>
+            <select id="poseEngineSelect" class="bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800">
+              <option value="mediapipe">標準（MediaPipe）</option>
+              <option value="instanthmr">高精度メッシュ（InstantHMR）</option>
+            </select>
+          </label>
           <input type="file" id="videoFileInput" accept="video/*" class="sr-only">
           <input type="file" id="cameraDirectInput" accept="video/*" capture="environment" class="sr-only">
           <input type="file" id="smplFileInput" accept=".json" class="sr-only">
@@ -393,6 +400,10 @@
 
           <!-- 3D Camera Angles (Active only when 3D is visible) -->
           <div id="camPresetButtons" class="flex items-center gap-1 text-[11px]">
+            <label id="meshToggleLabel" class="hidden items-center gap-1 mr-2 text-slate-600 font-medium cursor-pointer" title="InstantHMRの人体メッシュと骨格表示を切り替えます">
+              <input type="checkbox" id="meshToggle" checked class="rounded text-indigo-600 w-3.5 h-3.5">
+              <span>人体メッシュ</span>
+            </label>
             <span class="text-slate-400 mr-1 font-medium">3D視点:</span>
             <button id="camSagittalBtn" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition" title="矢状面（側面から前傾・屈伸を観察）">
               矢状面(側面)
@@ -820,7 +831,8 @@
     import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261125_22";
     import { StsMetricCalculator } from "./stsMetrics.js?v=20261125_22";
     import { StsCsvExporter } from "./stsExporter.js?v=20261125_22";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261125_22";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_1";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_1";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -857,6 +869,31 @@
 
     // SMPL (4D-Humans) Controls
     let isSmplDataActive = false;
+
+    // InstantHMR (browser mesh) state
+    const poseEngineSelect = document.getElementById("poseEngineSelect");
+    const meshToggle = document.getElementById("meshToggle");
+    const meshToggleLabel = document.getElementById("meshToggleLabel");
+    let meshEstimator = null;
+    let meshSequence = null;          // { faces, frames: [{ timestampMs, vertices, ankle }] } of the last InstantHMR run
+    let activePoseEngine = "mediapipe";
+    try {
+      const saved = localStorage.getItem("sts.poseEngine");
+      if (saved && poseEngineSelect.querySelector(`option[value="${saved}"]`)) poseEngineSelect.value = saved;
+    } catch (e) { /* storage unavailable */ }
+    poseEngineSelect.addEventListener("change", () => {
+      try { localStorage.setItem("sts.poseEngine", poseEngineSelect.value); } catch (e) { /* storage unavailable */ }
+    });
+    meshToggle.addEventListener("change", () => { if (sts3dViewer) sts3dViewer.setMeshVisible(meshToggle.checked); });
+
+    function applyMeshSequenceToViewer() {
+      if (!sts3dViewer) return;
+      if (meshSequence) sts3dViewer.setMeshSequence(meshSequence.faces, meshSequence.frames);
+      else sts3dViewer.setMeshSequence(null, null);
+      sts3dViewer.setMeshVisible(meshToggle.checked);
+      meshToggleLabel.classList.toggle("hidden", !meshSequence);
+      meshToggleLabel.classList.toggle("inline-flex", !!meshSequence);
+    }
     const smplFileInput = document.getElementById("smplFileInput");
     const selectSmplBtn = document.getElementById("selectSmplBtn");
     const selectSmplBtnText = document.getElementById("selectSmplBtnText");
@@ -904,6 +941,8 @@
           });
 
           isSmplDataActive = true;
+          meshSequence = null;
+          activePoseEngine = "mediapipe";
           if (smplStatusBadge) {
             smplStatusBadge.classList.remove("hidden");
             smplStatusBadge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span> SMPL人体メッシュ (4D-Humans) 連動中 (${rawExtractedFrames.length}フレーム)`;
@@ -1384,6 +1423,7 @@
           if (analysisResult && analysisResult.frames) {
             sts3dViewer.loadFrames(analysisResult.frames);
           }
+          applyMeshSequenceToViewer();
         } catch (e) {
           console.warn("Lazy 3D viewer init error:", e);
         }
@@ -1612,6 +1652,11 @@
 
     // Frame Extraction & Pose Detection
     async function extractFramesAndAnalyze() {
+      if (poseEngineSelect.value === "instanthmr") {
+        return extractFramesWithMesh();
+      }
+      activePoseEngine = "mediapipe";
+      meshSequence = null;
       loadingOverlay.classList.remove("hidden");
       progressText.innerText = "MediaPipe AIモデルを準備中...";
 
@@ -1693,6 +1738,87 @@
       }
     }
 
+    // Frame extraction with InstantHMR: body mesh + keypoints, entirely in the browser
+    async function extractFramesWithMesh() {
+      loadingOverlay.classList.remove("hidden");
+      progressText.innerText = "高精度メッシュモデルを準備中...";
+      try {
+        if (!meshEstimator) {
+          const base = new URLSearchParams(location.search).get("meshModelBase") || undefined;
+          meshEstimator = new StsMeshEstimator({
+            modelBaseUrl: base,
+            onProgress: (p) => {
+              if (p.stage === "download" && p.total > 0) {
+                progressText.innerText = `高精度メッシュモデルを読み込み中... ${Math.round((p.loaded / p.total) * 100)}%（初回のみ約145MB）`;
+              } else if (p.stage === "session") {
+                progressText.innerText = "推論エンジンを準備中...";
+              }
+            }
+          });
+        }
+        const backend = await meshEstimator.init({ preferWebGpu: true });
+        meshEstimator.resetTracking();
+
+        const rawDur = video.duration;
+        const duration = (rawDur && !isNaN(rawDur) && rawDur > 0) ? rawDur : 10;
+        const targetFps = 25.0;
+        const stepMs = 1000.0 / targetFps;
+        const totalSteps = Math.max(5, Math.floor((duration * 1000) / stepMs));
+
+        rawExtractedFrames = [];
+        const meshFrames = [];
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = video.videoWidth > 0 ? video.videoWidth : 640;
+        offCanvas.height = video.videoHeight > 0 ? video.videoHeight : 480;
+        const offCtx = offCanvas.getContext("2d", { willReadFrequently: true });
+        const t0 = performance.now();
+
+        for (let i = 0; i <= totalSteps; i++) {
+          const timeMs = Math.round(i * stepMs);
+          await seekVideoPromise(timeMs / 1000.0);
+          offCtx.drawImage(video, 0, 0, offCanvas.width, offCanvas.height);
+
+          const lmMap = {}, worldLmMap = {};
+          try {
+            const r = await meshEstimator.estimate(offCanvas);
+            for (const [k, p] of Object.entries(r.landmarks)) lmMap[k] = new Point2D(p.x, p.y);
+            for (const [k, p] of Object.entries(r.worldLandmarks)) worldLmMap[k] = new Point3D(p.x, p.y, p.z, p.visibility);
+            const j = r.joints3d;   // MHR keypoints 13/14 = left/right ankle
+            meshFrames.push({
+              timestampMs: timeMs,
+              vertices: r.vertices,
+              ankle: [0, 1, 2].map((a) => (j[13 * 3 + a] + j[14 * 3 + a]) / 2)
+            });
+          } catch (e) {
+            console.warn(`InstantHMR frame warning at ${timeMs}ms:`, e);
+            meshEstimator.resetTracking();
+          }
+          rawExtractedFrames.push(new PoseFrameData({ timestampMs: timeMs, landmarks: lmMap, worldLandmarks: worldLmMap }));
+
+          const elapsed = (performance.now() - t0) / 1000;
+          const remain = i > 0 ? elapsed / i * (totalSteps - i) : 0;
+          progressText.innerText = `高精度メッシュで解析中 (${backend === "webgpu" ? "GPU" : "CPU"})... ${Math.round((i / totalSteps) * 100)}%` +
+            (i > 2 ? `　残り約${Math.ceil(remain)}秒` : "");
+          if (i % 2 === 0) await new Promise((r) => setTimeout(r, 0));
+        }
+
+        meshSequence = meshFrames.length ? { faces: meshEstimator.faces, frames: meshFrames } : null;
+        activePoseEngine = "instanthmr";
+        console.log(`InstantHMR: ${meshFrames.length} frames on ${backend} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+        video.currentTime = 0;
+        loadingOverlay.classList.add("hidden");
+        runFullAnalysis();
+        if (currentViewMode === "2d") {
+          const splitBtn = document.getElementById("viewModeSplitBtn");
+          if (splitBtn) splitBtn.click();
+        }
+      } catch (err) {
+        console.error("InstantHMR extraction error:", err);
+        alert("高精度メッシュ解析でエラーが発生しました: " + err.message + "\n標準（MediaPipe）エンジンで解析し直してください。");
+        loadingOverlay.classList.add("hidden");
+      }
+    }
+
     function runFullAnalysis() {
       if (rawExtractedFrames.length < 5) return;
 
@@ -1724,6 +1850,7 @@
         try {
           sts3dViewer.setMirrored(isFrontCameraMirrored);
           sts3dViewer.loadFrames(analysisResult.frames);
+          applyMeshSequenceToViewer();
         } catch (e) {
           console.warn("Failed to load frames into 3D viewer:", e);
         }
@@ -2689,7 +2816,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>システム:</strong> ${isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)')}</div>
+              <div><strong>システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : (isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'MediaPipe 3D (剛体骨長保存)'))}</div>
             </div>
           </div>
 
@@ -2847,7 +2974,7 @@
             </div>
             <div class="text-right text-[10px] text-slate-600 leading-tight">
               <div><strong>解析日時:</strong> ${nowStr}</div>
-              <div><strong>解析システム:</strong> ${isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)')}</div>
+              <div><strong>解析システム:</strong> ${activePoseEngine === "instanthmr" ? '<span class="text-indigo-700 font-bold">InstantHMR (MHR人体メッシュ)</span>' : (isSmplDataActive ? '<span class="text-indigo-700 font-bold">4D-Humans (SMPL人体メッシュ)</span>' : ((rawLidarFrames && rawLidarFrames.length > 0) ? '<span class="text-emerald-700 font-bold">MediaPipe + LiDAR実測連動</span>' : 'STS Analyzer (剛体骨長保存)'))}</div>
             </div>
           </div>
 
