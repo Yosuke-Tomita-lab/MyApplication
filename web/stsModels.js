@@ -96,7 +96,8 @@ export class PoseFrameData {
     hipAngleDeg = 0.0,
     kneeAngleDeg = 0.0,
     grf = null,
-    meshCom = null
+    meshCom = null,
+    grfVector = null
   }) {
     this.timestampMs = timestampMs;
     this.landmarks = landmarks; // Map of index -> Point2D
@@ -116,6 +117,8 @@ export class PoseFrameData {
     // Centre of mass of the body mesh (InstantHMR engine only): {world: {x,y,z} in the worldLandmarks frame,
     // image: {x,y} normalised}. When present it replaces the landmark-weighted CoM estimate.
     this.meshCom = meshCom;
+    // Estimated whole-body ground reaction force [N]: {x: image right, y: up, z: away from the camera}
+    this.grfVector = grfVector;
   }
 }
 

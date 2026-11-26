@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261126_2";
+} from "./stsModels.js?v=20261126_5";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -446,6 +446,8 @@ export class StsMetricCalculator {
 
       return new PoseFrameData({
         ...frame,
+        // Whole-body GRF vector [N] in the worldLandmarks axes: x = image right, y = up, z = away from the camera
+        grfVector: { x: massKg * smoothAx[i], y: verticalN, z: massKg * az },
         grf: new GrfSample(
           verticalBw,
           verticalN,
@@ -665,6 +667,46 @@ export class StsMetricCalculator {
       }
     }
     return out;
+  }
+
+  /**
+   * Zero-phase Gaussian smoothing of the per-frame input (2D and 3D landmarks, mesh CoM) over time, sigma in ms.
+   * Each landmark is averaged over the neighbouring frames that have it. sigma <= 0 returns the frames unchanged.
+   */
+  static smoothFrames(rawFrames, sigmaMs) {
+    if (!rawFrames || !(sigmaMs > 0)) return rawFrames;
+    const t = rawFrames.map(f => f.timestampMs);
+    const reach = 3 * sigmaMs;
+    const avgPoints = (i, get, make) => {
+      const keys = Object.keys(get(rawFrames[i]) || {});
+      const out = {};
+      for (const k of keys) {
+        let sx = 0, sy = 0, sz = 0, sw = 0, hasZ = false;
+        for (let j = i; j >= 0 && t[i] - t[j] <= reach; j--) add(j);
+        for (let j = i + 1; j < rawFrames.length && t[j] - t[i] <= reach; j++) add(j);
+        function add(j) {
+          const p = (get(rawFrames[j]) || {})[k];
+          if (!p) return;
+          const d = (t[j] - t[i]) / sigmaMs, w = Math.exp(-0.5 * d * d);
+          sx += w * p.x; sy += w * p.y; sw += w;
+          if (p.z != null) { sz += w * p.z; hasZ = true; }
+        }
+        const p0 = get(rawFrames[i])[k];
+        out[k] = make(sx / sw, sy / sw, hasZ ? sz / sw : undefined, p0);
+      }
+      return out;
+    };
+    return rawFrames.map((f, i) => {
+      const landmarks = avgPoints(i, g => g.landmarks, (x, y) => new Point2D(x, y));
+      const worldLandmarks = avgPoints(i, g => g.worldLandmarks, (x, y, z, p0) => new Point3D(x, y, z, p0.visibility));
+      let meshCom = f.meshCom;
+      if (meshCom) {
+        const w = avgPoints(i, g => (g.meshCom && g.meshCom.world) ? { c: g.meshCom.world } : null, (x, y, z) => ({ x, y, z })).c;
+        const im = avgPoints(i, g => (g.meshCom && g.meshCom.image) ? { c: g.meshCom.image } : null, (x, y) => ({ x, y })).c;
+        meshCom = { ...meshCom, world: meshCom.world ? w : null, image: meshCom.image ? im : null };
+      }
+      return new PoseFrameData({ ...f, landmarks, worldLandmarks, meshCom });
+    });
   }
 
   static median(values) {

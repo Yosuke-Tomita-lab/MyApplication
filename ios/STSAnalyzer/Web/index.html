@@ -373,17 +373,24 @@
           </div>
 
           <!-- 3D Camera Angles (Active only when 3D is visible) -->
-          <div id="camPresetButtons" class="flex items-center gap-1 text-[11px]">
+          <div id="camPresetButtons" class="flex flex-wrap items-center gap-1 text-[11px]">
+            <select id="meshSmoothingSelect" class="mr-1 bg-white border border-slate-300 rounded-md px-1 py-0.5 text-[11px] text-slate-700" title="時間方向のスムージング。3D表示だけでなく、解析値・グラフ・レポートもこの平滑化後のデータで計算します">
+              <option value="0">平滑化なし</option>
+              <option value="40">平滑化 弱</option>
+              <option value="80">平滑化 中</option>
+              <option value="120" selected>平滑化 強</option>
+              <option value="200">平滑化 最強</option>
+            </select>
             <label id="meshToggleLabel" class="hidden items-center gap-1 mr-2 text-slate-600 font-medium cursor-pointer" title="InstantHMRの人体メッシュと骨格表示を切り替えます">
               <input type="checkbox" id="meshToggle" checked class="rounded text-indigo-600 w-3.5 h-3.5">
               <span>人体メッシュ</span>
-              <select id="meshSmoothingSelect" class="ml-1 bg-white border border-slate-300 rounded-md px-1 py-0.5 text-[11px] text-slate-700" title="メッシュ表示の時間方向スムージング（表示のみ。解析値には影響しません）">
-                <option value="0">平滑化なし</option>
-                <option value="40">平滑化 弱</option>
-                <option value="80">平滑化 中</option>
-                <option value="120" selected>平滑化 強</option>
-                <option value="200">平滑化 最強</option>
-              </select>
+            </label>
+            <label class="inline-flex items-center gap-1 mr-2 text-slate-600 font-medium cursor-pointer" title="推定床反力ベクトル（離臀〜立位安定まで）。赤: 合力 / 青: 左足 / 橙: 右足（半透明）。長さ 0.9 m = 体重1倍">
+              <input type="checkbox" id="grfToggle" checked class="rounded text-red-600 w-3.5 h-3.5">
+              <span>床反力</span>
+              <span class="inline-block w-2 h-2 rounded-sm bg-red-500"></span><span class="text-[10px] text-slate-500">合力</span>
+              <span class="inline-block w-2 h-2 rounded-sm bg-blue-500/50"></span><span class="text-[10px] text-slate-500">左</span>
+              <span class="inline-block w-2 h-2 rounded-sm bg-orange-500/50"></span><span class="text-[10px] text-slate-500">右</span>
             </label>
             <span class="text-slate-400 mr-1 font-medium">3D視点:</span>
             <button id="camSagittalBtn" class="px-2.5 py-1 bg-indigo-50 text-indigo-700 font-bold rounded-lg border border-indigo-200 hover:bg-indigo-100 transition" title="矢状面（側面から前傾・屈伸を観察）">
@@ -655,11 +662,23 @@
             </div>
           </div>
 
-          <!-- 3. 前後床反力 (AP-GRF: Anterior-Posterior Ground Reaction Force) -->
+          <!-- 3. 床反力ピーク: 鉛直 (vGRF) と前後 (AP-GRF) -->
           <div class="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2 text-xs">
             <div class="flex items-center justify-between text-[11px] font-bold text-slate-800">
-              <span>前後床反力ピーク (AP-GRF)</span>
+              <span>床反力ピーク (鉛直・前後 GRF)</span>
               <span class="text-[10px] text-slate-400 font-normal">離臀〜立位完了時</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-center">
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-red-600 font-semibold">鉛直ピーク (Vertical max)</div>
+                <div id="dispVertPeakBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispVertPeakN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
+              <div class="bg-white p-2 rounded-lg border border-slate-200">
+                <div class="text-[10px] text-rose-400 font-semibold">鉛直最小 (Vertical min)</div>
+                <div id="dispVertMinBw" class="text-sm font-bold text-slate-800 mt-0.5">-- %BW</div>
+                <div id="dispVertMinN" class="text-[10px] text-slate-400">(-- N)</div>
+              </div>
             </div>
             <div class="grid grid-cols-2 gap-2 text-center">
               <div class="bg-white p-2 rounded-lg border border-slate-200">
@@ -728,6 +747,54 @@
               <span class="inline-block w-2 h-2 bg-emerald-500"></span><span>■起立完了</span>
             </div>
             <span class="text-emerald-700 font-semibold">右上（座位屈曲位）から左下（立位伸展位 0°, 0°）へ進行</span>
+          </div>
+        </div>
+
+        <!-- Margin of Stability Card (bird's-eye view + time series) -->
+        <div id="stabilityCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+            <div>
+              <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                Margin of Stability（前後・左右）
+              </h3>
+              <p class="text-[10px] text-slate-400 mt-0.5">XcoM = CoM + v/ω₀（Hof 2005）。支持基底面（両足の踵・足首・つま先）の近い方の縁までの距離。正: 支持基底面の内側 / 負: 外側</p>
+            </div>
+            <span id="stabilityTrialLabel" class="text-[10px] text-slate-500"></span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+            <div class="bg-rose-50/60 p-2 rounded-lg border border-rose-100">
+              <div class="text-[10px] text-rose-700 font-semibold">前後 MoS（離臀時）</div>
+              <div id="dispMosApSeat" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+            <div class="bg-rose-50/60 p-2 rounded-lg border border-rose-100">
+              <div class="text-[10px] text-rose-700 font-semibold">前後 MoS（離臀〜安定 最小）</div>
+              <div id="dispMosApMin" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+            <div class="bg-sky-50/60 p-2 rounded-lg border border-sky-100">
+              <div class="text-[10px] text-sky-700 font-semibold">左右 MoS（離臀時）</div>
+              <div id="dispMosMlSeat" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+            <div class="bg-sky-50/60 p-2 rounded-lg border border-sky-100">
+              <div class="text-[10px] text-sky-700 font-semibold">左右 MoS（離臀〜安定 最小）</div>
+              <div id="dispMosMlMin" class="font-bold text-slate-800 mt-0.5">-- cm</div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+              <div class="text-[10px] text-slate-500 mb-1">鳥瞰図（上から見た図・上が前方）</div>
+              <canvas id="stabilityMapCanvas" width="480" height="480" class="w-full aspect-square"></canvas>
+              <div class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500 mt-1">
+                <span><span class="inline-block w-2.5 h-2.5 bg-slate-300 border border-slate-400 align-middle"></span> 支持基底面</span>
+                <span><span class="inline-block w-2.5 h-0.5 bg-amber-500 align-middle"></span> CoM軌跡</span>
+                <span><span class="inline-block w-2.5 h-0.5 bg-rose-500 align-middle"></span> XcoM軌跡</span>
+                <span>● 現在 / ◆ 離臀</span>
+              </div>
+            </div>
+            <div class="bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+              <div class="text-[10px] text-slate-500 mb-1">MoS 時系列（離臀〜安定の区間を表示）</div>
+              <div class="h-64 relative"><canvas id="stabilityChart"></canvas></div>
+            </div>
           </div>
         </div>
 
@@ -809,11 +876,12 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_2";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_3";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_2";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_4";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_2";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_5";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_5";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_5";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_5";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_5";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_5";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -822,6 +890,7 @@
     let isFrontCameraMirrored = false;
     let poseLandmarker = null;
     let analysisResult = null;
+    let stabilityResult = null;   // margin of stability (stsStability.js) for analysisResult
     let selectedTrialIdx = 0;
     let rawExtractedFrames = [];
 
@@ -865,7 +934,10 @@
     meshSmoothingSelect.addEventListener("change", () => {
       try { localStorage.setItem("sts.meshSmoothingMs", meshSmoothingSelect.value); } catch (e) { /* storage unavailable */ }
       if (sts3dViewer) sts3dViewer.setMeshSmoothing(meshSmoothingSelect.value);
+      if (rawExtractedFrames.length >= 5) runFullAnalysis();   // the analysis uses the same smoothing
     });
+    const grfToggle = document.getElementById("grfToggle");
+    grfToggle.addEventListener("change", () => { if (sts3dViewer) sts3dViewer.setGrfVisible(grfToggle.checked); });
 
     function applyMeshSequenceToViewer() {
       if (!sts3dViewer) return;
@@ -1015,6 +1087,7 @@
     // Charts
     let cumTimeChart = null;
     let biasChart = null;
+    let stabilityChart = null;
     let angleAngleChart = null;
     let currentAngleRep = 'ALL';
 
@@ -1064,6 +1137,7 @@
             sts3dViewer.loadFrames(analysisResult.frames);
           }
           applyMeshSequenceToViewer();
+          applyGrfToViewer();
         } catch (e) {
           console.warn("Lazy 3D viewer init error:", e);
         }
@@ -1461,6 +1535,18 @@
       }
     }
 
+    // GRF arrows are shown where the on-screen GRF value is: from seat-off to the end of each trial
+    function grfDisplayWindows() {
+      if (!analysisResult) return [];
+      const is30 = analysisResult.mode.id === "THIRTY_SECONDS";
+      return analysisResult.trials.map(t => [t.seatOffTimeMs, is30 ? t.standEndTimeMs + 1000 : t.stableTimeMs + 500]);
+    }
+    function applyGrfToViewer() {
+      if (!sts3dViewer) return;
+      sts3dViewer.setGrfVisible(grfToggle.checked);
+      sts3dViewer.setGrfDisplay(grfDisplayWindows(), (anthropometrics.weightKg || 65) * 9.80665);
+    }
+
     function runFullAnalysis() {
       if (rawExtractedFrames.length < 5) return;
 
@@ -1472,8 +1558,10 @@
         ? parseInt(thirtySecRepsInput.value || 10)
         : null;
 
+      // Same temporal smoothing as the 3D view: every value, graph and report below uses the smoothed frames
+      const smoothingMs = Number(meshSmoothingSelect.value) || 0;
       analysisResult = StsMetricCalculator.calculate({
-        rawFrames: rawExtractedFrames,
+        rawFrames: StsMetricCalculator.smoothFrames(rawExtractedFrames, smoothingMs),
         mode: currentMode,
         anthropometrics,
         isFrontCameraMirrored,
@@ -1488,10 +1576,13 @@
           sts3dViewer.setMirrored(isFrontCameraMirrored);
           sts3dViewer.loadFrames(analysisResult.frames);
           applyMeshSequenceToViewer();
+          applyGrfToViewer();
         } catch (e) {
           console.warn("Failed to load frames into 3D viewer:", e);
         }
       }
+
+      stabilityResult = computeMarginOfStability(analysisResult.frames, analysisResult.trials, isFrontCameraMirrored);
 
       exportCsvBtn.disabled = false;
       openReportBtn.disabled = false;
@@ -1502,6 +1593,125 @@
       drawCurrentOverlay();
     }
 
+    // ---- Margin of stability: numbers, bird's-eye map and time series for the selected trial ----
+    function stabilityTrialSummary(trial) {
+      if (!stabilityResult || !trial) return null;
+      return stabilityResult.trials.find(t => t.repIndex === trial.repIndex) || null;
+    }
+
+    function updateStabilityCard(trial) {
+      const fmt = v => Number.isFinite(v) ? `${v.toFixed(1)} cm` : "-- cm";
+      const s = stabilityTrialSummary(trial);
+      document.getElementById("dispMosApSeat").innerText = fmt(s?.mosApAtSeatOffCm);
+      document.getElementById("dispMosApMin").innerText = fmt(s?.minMosApCm);
+      document.getElementById("dispMosMlSeat").innerText = fmt(s?.mosMlAtSeatOffCm);
+      document.getElementById("dispMosMlMin").innerText = fmt(s?.minMosMlCm);
+      document.getElementById("stabilityTrialLabel").innerText = trial ? `${trial.repIndex}回目` : "";
+      renderStabilityChart(trial);
+      drawStabilityMap();
+    }
+
+    function renderStabilityChart(trial) {
+      if (stabilityChart) { stabilityChart.destroy(); stabilityChart = null; }
+      if (!stabilityResult || !trial) return;
+      const end = trial.stableTimeMs ?? trial.standEndTimeMs;
+      const span = stabilityResult.series.filter(p => p.timestampMs >= trial.seatOffTimeMs - 300 && p.timestampMs <= end + 300);
+      if (span.length < 2) return;
+      const pts = (k) => span.map(p => ({ x: (p.timestampMs - trial.seatOffTimeMs) / 1000, y: +(p[k] * 100).toFixed(2) }));
+      stabilityChart = new Chart(document.getElementById("stabilityChart").getContext("2d"), {
+        type: "line",
+        data: {
+          datasets: [
+            { label: "前後 MoS (cm)", data: pts("mosAp"), borderColor: "#e11d48", backgroundColor: "#e11d48", pointRadius: 0, borderWidth: 2, tension: 0.2 },
+            { label: "左右 MoS (cm)", data: pts("mosMl"), borderColor: "#0284c7", backgroundColor: "#0284c7", pointRadius: 0, borderWidth: 2, tension: 0.2 }
+          ]
+        },
+        options: {
+          animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+          plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+          scales: {
+            x: { type: "linear", title: { display: true, text: "離臀からの時間 (s)", font: { size: 10 } }, grid: { color: "#f1f5f9" } },
+            y: { title: { display: true, text: "cm", font: { size: 10 } },
+                 grid: { color: (c) => c.tick.value === 0 ? "#64748b" : "#f1f5f9", lineWidth: (c) => c.tick.value === 0 ? 1.5 : 1 } }
+          }
+        }
+      });
+    }
+
+    function drawStabilityMap() {
+      const cv = document.getElementById("stabilityMapCanvas");
+      if (!cv) return;
+      const g = cv.getContext("2d");
+      g.clearRect(0, 0, cv.width, cv.height);
+      const trial = analysisResult?.trials?.[selectedTrialIdx];
+      if (!stabilityResult || !trial) {
+        g.fillStyle = "#94a3b8"; g.font = "14px sans-serif"; g.textAlign = "center";
+        g.fillText("解析後に表示されます", cv.width / 2, cv.height / 2);
+        return;
+      }
+      const { bos, feet, series } = stabilityResult;
+      const end = trial.stableTimeMs ?? trial.standEndTimeMs;
+      const path = series.filter(p => p.timestampMs >= trial.startTimeMs && p.timestampMs <= end);
+      const nowMs = Math.round(video.currentTime * 1000);
+      const now = series.length ? series.reduce((a, b) => Math.abs(b.timestampMs - nowMs) < Math.abs(a.timestampMs - nowMs) ? b : a) : null;
+      const seat = series.length ? series.reduce((a, b) => Math.abs(b.timestampMs - trial.seatOffTimeMs) < Math.abs(a.timestampMs - trial.seatOffTimeMs) ? b : a) : null;
+
+      // Extent (metres, body frame [forward, left]) and an equal-aspect scale; forward is up, the body's left is on the left
+      const pts = [[bos.anterior, bos.left], [bos.posterior, bos.right], ...path.flatMap(p => [p.com, p.xcom])];
+      if (now) pts.push(now.com, now.xcom);
+      let f0 = Math.min(...pts.map(p => p[0])), f1 = Math.max(...pts.map(p => p[0]));
+      let m0 = Math.min(...pts.map(p => p[1])), m1 = Math.max(...pts.map(p => p[1]));
+      const pad = 0.08, span = Math.max(f1 - f0, m1 - m0, 0.4) + 2 * pad;
+      const fc = (f0 + f1) / 2, mc = (m0 + m1) / 2;
+      const k = cv.width / span;
+      const X = (p) => cv.width / 2 - (p[1] - mc) * k;
+      const Y = (p) => cv.height / 2 - (p[0] - fc) * k;
+
+      // 10 cm grid
+      g.strokeStyle = "#e2e8f0"; g.lineWidth = 1;
+      for (let v = Math.floor((fc - span / 2) * 10) / 10; v <= fc + span / 2; v += 0.1) { g.beginPath(); g.moveTo(0, Y([v, 0])); g.lineTo(cv.width, Y([v, 0])); g.stroke(); }
+      for (let v = Math.floor((mc - span / 2) * 10) / 10; v <= mc + span / 2; v += 0.1) { g.beginPath(); g.moveTo(X([0, v]), 0); g.lineTo(X([0, v]), cv.height); g.stroke(); }
+
+      // Base of support (bounding box in body axes) and the feet (heel - ankle - toe)
+      g.fillStyle = "rgba(148, 163, 184, 0.28)"; g.strokeStyle = "#64748b"; g.lineWidth = 1.5;
+      g.beginPath();
+      g.rect(X([0, bos.left]), Y([bos.anterior, 0]), (bos.left - bos.right) * k, (bos.anterior - bos.posterior) * k);
+      g.fill(); g.stroke();
+      for (const [side, color] of [["left", "#2563eb"], ["right", "#ea580c"]]) {
+        const [ank, heel, toe] = feet[side];
+        g.strokeStyle = color; g.lineWidth = 4; g.lineCap = "round";
+        g.beginPath(); g.moveTo(X(heel), Y(heel)); g.lineTo(X(ank), Y(ank)); g.lineTo(X(toe), Y(toe)); g.stroke();
+        g.fillStyle = color; g.font = "bold 12px sans-serif"; g.textAlign = "center";
+        g.fillText(side === "left" ? "L" : "R", X(heel), Y(heel) + 16);
+      }
+
+      // Trajectories
+      const line = (key, color, dash) => {
+        if (path.length < 2) return;
+        g.strokeStyle = color; g.lineWidth = 2; g.setLineDash(dash); g.beginPath();
+        path.forEach((p, i) => { const q = p[key]; if (i === 0) g.moveTo(X(q), Y(q)); else g.lineTo(X(q), Y(q)); });
+        g.stroke(); g.setLineDash([]);
+      };
+      line("com", "#f59e0b", []);
+      line("xcom", "#e11d48", [6, 4]);
+
+      const diamond = (q, color) => {
+        const x = X(q), y = Y(q);
+        g.fillStyle = color; g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 7, y); g.lineTo(x, y + 7); g.lineTo(x - 7, y); g.closePath(); g.fill();
+      };
+      if (seat) { diamond(seat.com, "#b45309"); diamond(seat.xcom, "#9f1239"); }
+      if (now) {
+        for (const [q, color] of [[now.com, "#f59e0b"], [now.xcom, "#e11d48"]]) {
+          g.fillStyle = color; g.strokeStyle = "#fff"; g.lineWidth = 2;
+          g.beginPath(); g.arc(X(q), Y(q), 7, 0, Math.PI * 2); g.fill(); g.stroke();
+        }
+        g.fillStyle = "#334155"; g.font = "12px sans-serif"; g.textAlign = "left";
+        g.fillText(`前後MoS ${(now.mosAp * 100).toFixed(1)} cm / 左右MoS ${(now.mosMl * 100).toFixed(1)} cm`, 8, 18);
+      }
+      g.fillStyle = "#64748b"; g.font = "11px sans-serif"; g.textAlign = "right";
+      g.fillText("▲ 前方", cv.width - 8, 18);
+    }
+
     function updateSagittal3dCard(trial) {
       if (!trial) {
         document.getElementById("dispSeatOffApDist").innerText = "--";
@@ -1510,6 +1720,9 @@
         document.getElementById("dispApPropN").innerText = "(-- N)";
         document.getElementById("dispApBrakeBw").innerText = "-- %BW";
         document.getElementById("dispApBrakeN").innerText = "(-- N)";
+        for (const id of ["dispVertPeakBw", "dispVertMinBw"]) document.getElementById(id).innerText = "-- %BW";
+        for (const id of ["dispVertPeakN", "dispVertMinN"]) document.getElementById(id).innerText = "(-- N)";
+        updateStabilityCard(null);
         document.getElementById("dispMaxTrunkFlex").innerText = "-- °";
         document.getElementById("dispMaxHipFlex").innerText = "-- °";
         document.getElementById("dispKneeRom").innerText = "-- °";
@@ -1523,6 +1736,11 @@
       document.getElementById("dispApPropBw").innerText = `${(trial.peakApGrfPropulsionPercentBw ?? 0).toFixed(0)} %BW`;
       document.getElementById("dispApPropN").innerText = `(${(trial.peakApGrfPropulsionNewton ?? 0).toFixed(0)} N)`;
 
+      document.getElementById("dispVertPeakBw").innerText = `${(trial.peakVerticalBwPercent ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispVertPeakN").innerText = `(${(trial.peakVerticalNewton ?? 0).toFixed(0)} N)`;
+      document.getElementById("dispVertMinBw").innerText = `${(trial.minVerticalBwPercent ?? 0).toFixed(0)} %BW`;
+      document.getElementById("dispVertMinN").innerText = `(${(trial.minVerticalNewton ?? 0).toFixed(0)} N)`;
+      updateStabilityCard(trial);
       document.getElementById("dispApBrakeBw").innerText = `${(trial.peakApGrfBrakingPercentBw ?? 0).toFixed(0)} %BW`;
       document.getElementById("dispApBrakeN").innerText = `(${(trial.peakApGrfBrakingNewton ?? 0).toFixed(0)} N)`;
 
@@ -2140,6 +2358,7 @@
     // Draw Skeleton, CoM, and BoS on Overlay Canvas & Update 3D Viewport
     function drawCurrentOverlay() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawStabilityMap();
       if (!analysisResult || analysisResult.frames.length === 0) return;
 
       const currentMs = Math.round(video.currentTime * 1000.0);
