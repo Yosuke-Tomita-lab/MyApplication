@@ -803,6 +803,65 @@
           </div>
         </div>
 
+        <!-- CoM power & joint kinetics (estimated) -->
+        <div id="kineticsCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+            <div>
+              <h3 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span>
+                重心パワー・関節モーメント／パワー（推定）
+              </h3>
+              <p class="text-[10px] text-slate-400 mt-0.5">推定値です。重心パワー = m(a+g)·v（重心の力学的エネルギーの変化率、座面からの力も含む）。関節モーメントは矢状面の逆動力学（足→下腿→大腿）で、足ごとの床反力（重心から推定した床反力をCOPの左右配分で分割）と de Leva の身体部分係数を使用。モーメントは内部モーメント・伸展（足関節は底屈）が正、パワーは正 = 産生（求心性）。関節は離臀〜立位安定の区間のみ。</p>
+            </div>
+            <span id="kineticsTrialLabel" class="text-[10px] text-slate-500"></span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
+            <div class="bg-violet-50/60 p-2 rounded-lg border border-violet-100">
+              <div class="text-[10px] text-violet-700 font-semibold">重心パワー ピーク</div>
+              <div id="dispComPowerPeak" class="font-bold text-slate-800 mt-0.5">-- W</div>
+            </div>
+            <div class="bg-violet-50/60 p-2 rounded-lg border border-violet-100">
+              <div class="text-[10px] text-violet-700 font-semibold">重心パワー ピーク（体重比）</div>
+              <div id="dispComPowerPeakKg" class="font-bold text-slate-800 mt-0.5">-- W/kg</div>
+            </div>
+            <div class="bg-violet-50/60 p-2 rounded-lg border border-violet-100">
+              <div class="text-[10px] text-violet-700 font-semibold">ピーク時刻（離臀から）</div>
+              <div id="dispComPowerPeakTime" class="font-bold text-slate-800 mt-0.5">-- s</div>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-[11px] text-center border border-slate-100 rounded-lg">
+              <thead class="bg-slate-50 text-slate-500">
+                <tr><th class="p-1.5 text-left">関節（離臀〜安定）</th><th class="p-1.5 text-blue-600">左 ピークモーメント<br>N·m/kg</th><th class="p-1.5 text-orange-600">右 ピークモーメント<br>N·m/kg</th><th class="p-1.5 text-blue-600">左 ピークパワー<br>W/kg</th><th class="p-1.5 text-orange-600">右 ピークパワー<br>W/kg</th></tr>
+              </thead>
+              <tbody id="kineticsTableBody" class="text-slate-800 font-semibold"></tbody>
+            </table>
+          </div>
+          <div class="grid grid-cols-1 gap-3">
+            <div class="bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+              <div class="text-[10px] text-slate-500 mb-1">重心パワー 時系列（開始〜立位安定、0 s = 離臀）</div>
+              <div class="h-48 relative"><canvas id="comPowerChart"></canvas></div>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span class="text-slate-500">関節:</span>
+              <button data-kin-joint="hip" class="kinJointBtn px-2 py-0.5 rounded border border-slate-200">股関節</button>
+              <button data-kin-joint="knee" class="kinJointBtn px-2 py-0.5 rounded border border-slate-200">膝関節</button>
+              <button data-kin-joint="ankle" class="kinJointBtn px-2 py-0.5 rounded border border-slate-200">足関節</button>
+              <span class="text-slate-400 ml-2">青: 左 / 橙: 右（破線）</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+                <div id="jointMomentTitle" class="text-[10px] text-slate-500 mb-1">関節モーメント（N·m/kg）</div>
+                <div class="h-56 relative"><canvas id="jointMomentChart"></canvas></div>
+              </div>
+              <div class="bg-slate-50/60 rounded-xl p-2 border border-slate-100">
+                <div id="jointPowerTitle" class="text-[10px] text-slate-500 mb-1">関節パワー（W/kg）</div>
+                <div class="h-56 relative"><canvas id="jointPowerChart"></canvas></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Cumulative Time Graph Card -->
         <div id="cumTimeGraphCard" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-3">
           <div class="flex items-center justify-between">
@@ -881,12 +940,13 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_11";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_11";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_11";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_11";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_11";
-    import { computeMarginOfStability } from "./stsStability.js?v=20261126_11";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_12";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_12";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_12";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_12";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_12";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_12";
+    import { computeKinetics, summarizeKinetics } from "./stsKinetics.js?v=20261126_12";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -895,6 +955,8 @@
     let isFrontCameraMirrored = false;
     let poseLandmarker = null;
     let analysisResult = null;
+    let kineticsResult = null;    // CoM power & joint kinetics (stsKinetics.js) for analysisResult
+    let kinJoint = "knee";
     let stabilityResult = null;   // margin of stability (stsStability.js) for analysisResult
     let selectedTrialIdx = 0;
     let rawExtractedFrames = [];
@@ -1093,6 +1155,7 @@
     let cumTimeChart = null;
     let biasChart = null;
     let stabilityChart = null;
+    let comPowerChart = null, jointMomentChart = null, jointPowerChart = null;
     let angleAngleChart = null;
     let currentAngleRep = 'ALL';
 
@@ -1601,6 +1664,8 @@
       }
 
       stabilityResult = computeMarginOfStability(analysisResult.frames, analysisResult.trials, isFrontCameraMirrored, analysisResult.bodyFrame);
+      kineticsResult = computeKinetics(analysisResult);
+      analysisResult.kinetics = kineticsResult;
 
       exportCsvBtn.disabled = false;
       openReportBtn.disabled = false;
@@ -1616,6 +1681,70 @@
       if (!stabilityResult || !trial) return null;
       return stabilityResult.trials.find(t => t.repIndex === trial.repIndex) || null;
     }
+
+    function updateKineticsCard(trial) {
+      const k = summarizeKinetics(kineticsResult, trial);
+      const f = (v, d, u) => Number.isFinite(v) ? `${v.toFixed(d)} ${u}` : `-- ${u}`;
+      document.getElementById("dispComPowerPeak").innerText = f(k?.peakComPowerW, 0, "W");
+      document.getElementById("dispComPowerPeakKg").innerText = f(k?.peakComPowerWkg, 2, "W/kg");
+      document.getElementById("dispComPowerPeakTime").innerText = (k && trial) ? f((k.peakComPowerTimeMs - trial.seatOffTimeMs) / 1000, 2, "s") : "-- s";
+      document.getElementById("kineticsTrialLabel").innerText = trial ? `${trial.repIndex}回目` : "";
+      const names = { hip: "股関節（伸展+）", knee: "膝関節（伸展+）", ankle: "足関節（底屈+）" };
+      const c = (v) => Number.isFinite(v) ? v.toFixed(2) : "--";
+      document.getElementById("kineticsTableBody").innerHTML = ["hip", "knee", "ankle"].map(j => {
+        const L = k?.joints.left[j], R = k?.joints.right[j];
+        return `<tr class="border-t border-slate-100"><td class="p-1.5 text-left text-slate-600 font-normal">${names[j]}</td><td class="p-1.5">${c(L?.peakMoment)}</td><td class="p-1.5">${c(R?.peakMoment)}</td><td class="p-1.5">${c(L?.peakPower)}</td><td class="p-1.5">${c(R?.peakPower)}</td></tr>`;
+      }).join("");
+      document.querySelectorAll(".kinJointBtn").forEach(b => {
+        const on = b.dataset.kinJoint === kinJoint;
+        b.classList.toggle("bg-violet-600", on); b.classList.toggle("text-white", on); b.classList.toggle("border-violet-600", on);
+      });
+      renderKineticsCharts(trial);
+    }
+
+    function renderKineticsCharts(trial) {
+      for (const ch of [comPowerChart, jointMomentChart, jointPowerChart]) if (ch) ch.destroy();
+      comPowerChart = jointMomentChart = jointPowerChart = null;
+      if (!kineticsResult || !trial) return;
+      const end = trial.stableTimeMs ?? trial.standEndTimeMs;
+      const x = (s) => (s.timestampMs - trial.seatOffTimeMs) / 1000;
+      const opts = (yLabel) => ({
+        animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+        plugins: { legend: { position: "top", labels: { boxWidth: 12, font: { size: 10 } } } },
+        scales: {
+          x: { type: "linear", title: { display: true, text: "離臀からの時間 (s)", font: { size: 10 } }, grid: { color: "#f1f5f9" } },
+          y: { title: { display: true, text: yLabel, font: { size: 10 } },
+               grid: { color: (c) => c.tick.value === 0 ? "#64748b" : "#f1f5f9", lineWidth: (c) => c.tick.value === 0 ? 1.5 : 1 } }
+        }
+      });
+      const line = (label, data, color, dash = []) => ({ label, data, borderColor: color, backgroundColor: color, borderDash: dash, pointRadius: 0, borderWidth: 2, tension: 0.2 });
+      const all = kineticsResult.series.filter(s => s.timestampMs >= trial.startTimeMs - 200 && s.timestampMs <= end + 200 && Number.isFinite(s.comPowerW));
+      comPowerChart = new Chart(document.getElementById("comPowerChart").getContext("2d"), {
+        type: "line",
+        data: { datasets: [line("重心パワー (W/kg)", all.map(s => ({ x: x(s), y: +(s.comPowerW / kineticsResult.massKg).toFixed(3) })), "#7c3aed")] },
+        options: opts("W/kg")
+      });
+      const span = kineticsResult.series.filter(s => s.timestampMs >= trial.seatOffTimeMs && s.timestampMs <= end);
+      const pts = (side, key) => span.filter(s => s.joints[side] && Number.isFinite(s.joints[side][kinJoint][key]))
+        .map(s => ({ x: x(s), y: +s.joints[side][kinJoint][key].toFixed(3) }));
+      const jn = { hip: "股関節", knee: "膝関節", ankle: "足関節" }[kinJoint];
+      document.getElementById("jointMomentTitle").innerText = `${jn} モーメント（N·m/kg、${kinJoint === "ankle" ? "底屈" : "伸展"}+）`;
+      document.getElementById("jointPowerTitle").innerText = `${jn} パワー（W/kg、+ = 産生）`;
+      jointMomentChart = new Chart(document.getElementById("jointMomentChart").getContext("2d"), {
+        type: "line",
+        data: { datasets: [line("左", pts("left", "moment"), "#2563eb"), line("右", pts("right", "moment"), "#ea580c", [6, 4])] },
+        options: opts("N·m/kg")
+      });
+      jointPowerChart = new Chart(document.getElementById("jointPowerChart").getContext("2d"), {
+        type: "line",
+        data: { datasets: [line("左", pts("left", "power"), "#2563eb"), line("右", pts("right", "power"), "#ea580c", [6, 4])] },
+        options: opts("W/kg")
+      });
+    }
+    document.querySelectorAll(".kinJointBtn").forEach(b => b.addEventListener("click", () => {
+      kinJoint = b.dataset.kinJoint;
+      updateKineticsCard(analysisResult?.trials?.[selectedTrialIdx] || null);
+    }));
 
     function updateStabilityCard(trial) {
       const fmt = v => Number.isFinite(v) ? `${v.toFixed(1)} cm` : "-- cm";
@@ -1764,6 +1893,7 @@
         for (const id of ["dispVertPeakBw", "dispVertMinBw"]) document.getElementById(id).innerText = "-- %BW";
         for (const id of ["dispVertPeakN", "dispVertMinN"]) document.getElementById(id).innerText = "(-- N)";
         updateStabilityCard(null);
+        updateKineticsCard(null);
         document.getElementById("dispMaxTrunkFlex").innerText = "-- °";
         document.getElementById("dispMaxHipFlex").innerText = "-- °";
         document.getElementById("dispKneeRom").innerText = "-- °";
@@ -1782,6 +1912,7 @@
       document.getElementById("dispVertMinBw").innerText = `${(trial.minVerticalBwPercent ?? 0).toFixed(0)} %BW`;
       document.getElementById("dispVertMinN").innerText = `(${(trial.minVerticalNewton ?? 0).toFixed(0)} N)`;
       updateStabilityCard(trial);
+      updateKineticsCard(trial);
       document.getElementById("dispApBrakeBw").innerText = `${(trial.peakApGrfBrakingPercentBw ?? 0).toFixed(0)} %BW`;
       document.getElementById("dispApBrakeN").innerText = `(${(trial.peakApGrfBrakingNewton ?? 0).toFixed(0)} N)`;
 

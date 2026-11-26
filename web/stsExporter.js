@@ -3,6 +3,11 @@
  * Faithful port from StsCsvExporter.kt
  */
 
+import { summarizeKinetics } from "./stsKinetics.js?v=20261126_12";
+
+const KIN_JOINTS = ["hip", "knee", "ankle"];
+const KIN_SIDES = [["left", "L"], ["right", "R"]];
+
 export class StsCsvExporter {
 
   static buildExportCsv(result, selectedTrial = null) {
@@ -175,6 +180,28 @@ export class StsCsvExporter {
       sb.push(avgRow.join(","));
     }
 
+    // 重心パワー・関節モーメント/パワー（推定）
+    const kin = result.kinetics || null;
+    if (kin) {
+      sb.push("");
+      sb.push("# Power & Joint Kinetics (estimated from video: CoM-based GRF, COP and left/right split; de Leva segment parameters)");
+      sb.push("# CoM power = m(a+g).v from start to stable; joint peaks from seat-off to stable. Moments: internal, extension (ankle plantarflexion) positive, N m/kg. Powers: W/kg, positive = generation.");
+      const head = ["Rep", "PeakCoMPower_W", "PeakCoMPower_W_per_kg", "PeakCoMPowerTime_s"];
+      for (const [, S] of KIN_SIDES) for (const j of KIN_JOINTS) head.push(`${S}_${j}_PeakMoment_Nm_per_kg`, `${S}_${j}_PeakPower_W_per_kg`, `${S}_${j}_MinPower_W_per_kg`);
+      sb.push(head.join(","));
+      const f2 = (v, d = 2) => (Number.isFinite(v) ? v.toFixed(d) : "");
+      for (const t of trials) {
+        const k = summarizeKinetics(kin, t);
+        if (!k) continue;
+        const row = [t.repIndex, f2(k.peakComPowerW, 1), f2(k.peakComPowerWkg), f2(k.peakComPowerTimeMs / 1000, 3)];
+        for (const [side] of KIN_SIDES) for (const j of KIN_JOINTS) {
+          const v = k.joints[side][j];
+          row.push(f2(v.peakMoment), f2(v.peakPower), f2(v.minPower));
+        }
+        sb.push(row.join(","));
+      }
+    }
+
     sb.push("");
     sb.push("# Frame Time Series");
     const frameHeaders = [
@@ -200,14 +227,19 @@ export class StsCsvExporter {
       "AP_Propulsion_pctBW",
       "AP_Propulsion_N",
       "AP_Braking_pctBW",
-      "AP_Braking_N"
+      "AP_Braking_N",
+      "COP_Forward_m",
+      "COP_Left_m",
+      "COP_LeftFootShare_pct",
+      "CoM_Power_W"
     ];
+    for (const [, S] of KIN_SIDES) for (const j of KIN_JOINTS) frameHeaders.push(`${S}_${j}_Moment_Nm_per_kg`, `${S}_${j}_Power_W_per_kg`);
     for (let i = 0; i < 33; i++) {
       frameHeaders.push(`LM${i}_X`, `LM${i}_Y`, `LM3D_${i}_X`, `LM3D_${i}_Y`, `LM3D_${i}_Z`);
     }
     sb.push(frameHeaders.join(","));
 
-    for (const f of result.frames) {
+    for (const [fi, f] of result.frames.entries()) {
       const activePhase = this.resolveActivePhase(f.timestampMs, trials, fails, is30s);
       const row = [
         f.timestampMs,
@@ -232,8 +264,16 @@ export class StsCsvExporter {
         f.grf ? f.grf.apPropulsionPercentBw.toFixed(1) : "0.0",
         f.grf ? f.grf.apPropulsionNewton.toFixed(1) : "0.0",
         f.grf ? f.grf.apBrakingPercentBw.toFixed(1) : "0.0",
-        f.grf ? f.grf.apBrakingNewton.toFixed(1) : "0.0"
+        f.grf ? f.grf.apBrakingNewton.toFixed(1) : "0.0",
+        f.cop ? f.cop.fwd.toFixed(4) : "",
+        f.cop ? f.cop.left.toFixed(4) : "",
+        f.copFeet ? (f.copFeet.leftShare * 100).toFixed(1) : "",
+        kin && Number.isFinite(kin.series[fi]?.comPowerW) ? kin.series[fi].comPowerW.toFixed(1) : ""
       ];
+      for (const [side] of KIN_SIDES) for (const j of KIN_JOINTS) {
+        const v = kin?.series[fi]?.joints[side]?.[j];
+        row.push(v && Number.isFinite(v.moment) ? v.moment.toFixed(3) : "", v && Number.isFinite(v.power) ? v.power.toFixed(3) : "");
+      }
       for (let i = 0; i < 33; i++) {
         const pt = f.landmarks[i];
         const w0 = f.worldLandmarks ? f.worldLandmarks[i] : null;
