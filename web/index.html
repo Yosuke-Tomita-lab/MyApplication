@@ -881,12 +881,12 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_10";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_10";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_10";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_10";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_10";
-    import { computeMarginOfStability } from "./stsStability.js?v=20261126_10";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_11";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_11";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_11";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_11";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_11";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_11";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -1554,14 +1554,9 @@
     function grfDisplayWindows() {
       if (!analysisResult) return [];
       const is30 = analysisResult.mode.id === "THIRTY_SECONDS";
-      // 通常立ち上がり（1回）: 立位のまま足だけで体重を支えるので、離臀から動画の終わりまで表示する。
-      // 5回・30秒: 次の着座で座面にも荷重がかかるため、各試行の立位安定（30秒は立位終了）の少し後まで。
-      if (analysisResult.mode.id === "SINGLE") {
-        const fr = analysisResult.frames;
-        const lastMs = fr.length ? fr[fr.length - 1].timestampMs : 0;
-        return analysisResult.trials.map(t => [t.seatOffTimeMs, Math.max(lastMs, t.stableTimeMs + 500)]);
-      }
-      return analysisResult.trials.map(t => [t.seatOffTimeMs, is30 ? t.standEndTimeMs + 1000 : t.stableTimeMs + 500]);
+      // 離臀〜立位安定（30秒モードは立位終了の1秒後まで）。イベントを手動で修正するとそれに追従する。
+      // 離臀前は座面にも荷重がかかり、重心から推定した床反力と分けられないため表示しない。
+      return analysisResult.trials.map(t => [t.seatOffTimeMs, is30 ? t.standEndTimeMs + 1000 : t.stableTimeMs]);
     }
     function applyGrfToViewer() {
       if (!sts3dViewer) return;
@@ -1924,6 +1919,10 @@
           analysisResult.overallTotalDurationSec = Math.min(30.0, Math.max(0, (lastTime - t0) / 1000.0));
         }
       }
+
+      // 編集したイベントで、床反力・COPの表示区間と安定性（MoS）の集計も更新する
+      stabilityResult = computeMarginOfStability(analysisResult.frames, analysisResult.trials, isFrontCameraMirrored, analysisResult.bodyFrame);
+      applyGrfToViewer();
 
       loadActiveTrialTimings();
       renderReport();
