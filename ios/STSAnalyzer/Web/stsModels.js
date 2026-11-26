@@ -98,7 +98,10 @@ export class PoseFrameData {
     grf = null,
     meshCom = null,
     grfVector = null,
-    comLateral = null
+    comLateral = null,
+    comUp = null,
+    cop = null,
+    copFeet = null
   }) {
     this.timestampMs = timestampMs;
     this.landmarks = landmarks; // Map of index -> Point2D
@@ -122,6 +125,12 @@ export class PoseFrameData {
     this.grfVector = grfVector;
     // CoM to the subject's left of the mid-ankle [m], in the body frame (null without 3D landmarks)
     this.comLateral = comLateral;
+    // CoM height above the mid-ankle [m] in the body frame (null without 3D landmarks)
+    this.comUp = comUp;
+    // Estimated centre of pressure, body frame relative to the mid-ankle [m]: {fwd, left, heightM}
+    this.cop = cop;
+    // Per-foot COP on each foot's heel-toe axis and the left foot's share of the load: {left, right, leftShare}
+    this.copFeet = copFeet;
   }
 }
 

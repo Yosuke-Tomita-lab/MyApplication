@@ -788,6 +788,8 @@
                 <span><span class="inline-block w-2.5 h-2.5 bg-slate-300 border border-slate-400 align-middle"></span> 支持基底面</span>
                 <span><span class="inline-block w-2.5 h-0.5 bg-amber-500 align-middle"></span> CoM軌跡</span>
                 <span><span class="inline-block w-2.5 h-0.5 bg-rose-500 align-middle"></span> XcoM軌跡</span>
+                <span><span class="inline-block w-2.5 h-0.5 bg-emerald-600 align-middle"></span> COP軌跡（離臀後）</span>
+                <span>■ 現在のCOP（青・橙: 左右足のCOP、大きさ = 荷重割合）</span>
                 <span>● 現在 / ◆ 離臀</span>
               </div>
             </div>
@@ -876,12 +878,12 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_6";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_6";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_6";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_6";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_6";
-    import { computeMarginOfStability } from "./stsStability.js?v=20261126_6";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_7";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_7";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_7";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_7";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_7";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_7";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -1654,6 +1656,10 @@
       const { bos, feet, series } = stabilityResult;
       const end = trial.stableTimeMs ?? trial.standEndTimeMs;
       const path = series.filter(p => p.timestampMs >= trial.startTimeMs && p.timestampMs <= end);
+      // COP only once the feet carry the whole body (from seat-off), as for the GRF arrows
+      const grfWin = grfDisplayWindows()[selectedTrialIdx];
+      const inGrf = (p) => p.cop && grfWin && p.timestampMs >= grfWin[0] && p.timestampMs <= grfWin[1];
+      const copPath = series.filter(inGrf);
       const nowMs = Math.round(video.currentTime * 1000);
       const now = series.length ? series.reduce((a, b) => Math.abs(b.timestampMs - nowMs) < Math.abs(a.timestampMs - nowMs) ? b : a) : null;
       const seat = series.length ? series.reduce((a, b) => Math.abs(b.timestampMs - trial.seatOffTimeMs) < Math.abs(a.timestampMs - trial.seatOffTimeMs) ? b : a) : null;
@@ -1661,6 +1667,7 @@
       // Extent (metres, body frame [forward, left]) and an equal-aspect scale; forward is up, the body's left is on the left
       const pts = [[bos.anterior, bos.left], [bos.posterior, bos.right], ...path.flatMap(p => [p.com, p.xcom])];
       if (now) pts.push(now.com, now.xcom);
+      for (const p of copPath) pts.push(p.cop);
       let f0 = Math.min(...pts.map(p => p[0])), f1 = Math.max(...pts.map(p => p[0]));
       let m0 = Math.min(...pts.map(p => p[1])), m1 = Math.max(...pts.map(p => p[1]));
       const pad = 0.08, span = Math.max(f1 - f0, m1 - m0, 0.4) + 2 * pad;
@@ -1696,12 +1703,27 @@
       };
       line("com", "#f59e0b", []);
       line("xcom", "#e11d48", [6, 4]);
+      if (copPath.length >= 2) {
+        g.strokeStyle = "#059669"; g.lineWidth = 2; g.beginPath();
+        copPath.forEach((p, i) => { if (i === 0) g.moveTo(X(p.cop), Y(p.cop)); else g.lineTo(X(p.cop), Y(p.cop)); });
+        g.stroke();
+      }
 
       const diamond = (q, color) => {
         const x = X(q), y = Y(q);
         g.fillStyle = color; g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 7, y); g.lineTo(x, y + 7); g.lineTo(x - 7, y); g.closePath(); g.fill();
       };
       if (seat) { diamond(seat.com, "#b45309"); diamond(seat.xcom, "#9f1239"); }
+      if (now && inGrf(now)) {
+        if (now.copFeet) {
+          for (const [q, share, color] of [[now.copFeet.left, now.copFeet.leftShare, "#2563eb"], [now.copFeet.right, 1 - now.copFeet.leftShare, "#ea580c"]]) {
+            g.fillStyle = color; g.globalAlpha = 0.55;
+            g.beginPath(); g.arc(X(q), Y(q), 3 + 9 * share, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+          }
+        }
+        g.fillStyle = "#059669"; g.strokeStyle = "#fff"; g.lineWidth = 2;
+        g.beginPath(); g.rect(X(now.cop) - 6, Y(now.cop) - 6, 12, 12); g.fill(); g.stroke();
+      }
       if (now) {
         for (const [q, color] of [[now.com, "#f59e0b"], [now.xcom, "#e11d48"]]) {
           g.fillStyle = color; g.strokeStyle = "#fff"; g.lineWidth = 2;
@@ -1709,6 +1731,9 @@
         }
         g.fillStyle = "#334155"; g.font = "12px sans-serif"; g.textAlign = "left";
         g.fillText(`前後MoS ${(now.mosAp * 100).toFixed(1)} cm / 左右MoS ${(now.mosMl * 100).toFixed(1)} cm`, 8, 18);
+        if (inGrf(now) && now.copFeet) {
+          g.fillText(`COP 前${(now.cop[0] * 100).toFixed(1)} / 左${(now.cop[1] * 100).toFixed(1)} cm（足首中点基準）・荷重 左${(now.copFeet.leftShare * 100).toFixed(0)}% 右${(100 - now.copFeet.leftShare * 100).toFixed(0)}%`, 8, 34);
+        }
       }
       g.fillStyle = "#64748b"; g.font = "11px sans-serif"; g.textAlign = "right";
       g.fillText("▲ 前方", cv.width - 8, 18);

@@ -385,6 +385,14 @@ export class Sts3dViewer {
       left: make(0x3b82f6, 0.45),   // 左足: blue, semi-transparent
       right: make(0xf97316, 0.45)   // 右足: orange, semi-transparent
     };
+    // COP marker on the floor
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.03, 24), new THREE.MeshBasicMaterial({ color: 0x059669 }));
+    disc.rotation.x = -Math.PI / 2;
+    const copMarker = new THREE.Group();
+    copMarker.add(disc);
+    copMarker.visible = false;
+    this.scene.add(copMarker);
+    this.grfArrows.copMarker = copMarker;
   }
 
   /** Place arrow `a` from `origin` along `vec` (viewer coordinates, metres). */
@@ -404,31 +412,47 @@ export class Sts3dViewer {
   updateGrfArrows(frame, joints) {
     if (!this.grfArrows) this.buildGrfArrows();
     const arrows = this.grfArrows;
-    const hide = () => Object.values(arrows).forEach((a) => { a.group.visible = false; });
+    const hide = () => Object.values(arrows).forEach((a) => { if (a.group) a.group.visible = false; else a.visible = false; });
     const t = frame.timestampMs;
     const g = frame.grfVector;
     if (!this.showGrf || !g || !(this.grfBodyWeightN > 0) || !joints ||
         !this.grfWindows.some(([a, b]) => t >= a && t <= b)) return hide();
 
-    // Foot centres: midway between ankle and toe, on the floor
-    const foot = (ank, toe) => {
-      const p = joints[ank], q = joints[toe] || joints[ank];
-      return p ? new THREE.Vector3((p.x + q.x) / 2, 0.004, (p.z + q.z) / 2) : null;
-    };
-    const lFoot = foot(27, 31), rFoot = foot(28, 32);
-    if (!lFoot || !rFoot) return hide();
-
     // World axes -> viewer: x mirrored like the joints, y up, z towards the viewer
     const scale = GRF_BW_LENGTH / this.grfBodyWeightN;
     const sx = this.isMirrored ? -1 : 1;
-    const total = this.toBodyView(new THREE.Vector3(sx * g.x * scale, g.y * scale, -g.z * scale));
-    // Split between the feet by the left/right load share (the same share as the bias graph)
-    const fl = Math.max(0, Math.min(1, (frame.leftBiasPercent ?? 50) / 100));
-    const cop = new THREE.Vector3().addScaledVector(lFoot, fl).addScaledVector(rFoot, 1 - fl);
+    const yaw = this.bodyYaw();
+    const total = this.toBodyView(new THREE.Vector3(sx * g.x * scale, g.y * scale, -g.z * scale), yaw);
+
+    let cop, lFoot, rFoot, fl;
+    const bf = this.bodyFrame;
+    if (bf && frame.cop && frame.copFeet) {
+      // Estimated COP and per-foot COPs (body frame, metres from the mid-ankle) placed like the mesh:
+      // mid-ankle at the origin, on the floor
+      const place = (p) => {
+        const dx = p.fwd * bf.forward.x + p.left * bf.left.x, dz = p.fwd * bf.forward.z + p.left * bf.left.z;
+        return this.toBodyView(new THREE.Vector3(sx * dx, 0.004, -dz), yaw);
+      };
+      cop = place(frame.cop);
+      lFoot = place(frame.copFeet.left);
+      rFoot = place(frame.copFeet.right);
+      fl = frame.copFeet.leftShare;
+    } else {
+      // No body frame: foot centres (midway between ankle and toe) of the displayed skeleton, split by the bias
+      const foot = (ank, toe) => {
+        const p = joints[ank], q = joints[toe] || joints[ank];
+        return p ? new THREE.Vector3((p.x + q.x) / 2, 0.004, (p.z + q.z) / 2) : null;
+      };
+      lFoot = foot(27, 31); rFoot = foot(28, 32);
+      if (!lFoot || !rFoot) return hide();
+      fl = Math.max(0, Math.min(1, (frame.leftBiasPercent ?? 50) / 100));
+      cop = new THREE.Vector3().addScaledVector(lFoot, fl).addScaledVector(rFoot, 1 - fl);
+    }
 
     this.placeGrfArrow(arrows.total, cop, total);
     this.placeGrfArrow(arrows.left, lFoot, total.clone().multiplyScalar(fl));
     this.placeGrfArrow(arrows.right, rFoot, total.clone().multiplyScalar(1 - fl));
+    if (arrows.copMarker) { arrows.copMarker.position.set(cop.x, 0.003, cop.z); arrows.copMarker.visible = true; }
   }
 
   /** Temporal smoothing of the displayed mesh: Gaussian sigma in milliseconds (0 = interpolate only). */
