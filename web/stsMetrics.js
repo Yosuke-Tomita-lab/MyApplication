@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261126_6";
+} from "./stsModels.js?v=20261126_7";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -39,7 +39,11 @@ export class StsMetricCalculator {
     const baseFrames = this.interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored, bodyFrame);
 
     // 2. 推定床反力（GRF）付与
-    const framesWithGrf = this.attachEstimatedGrf(baseFrames, anthropometrics, isFrontCameraMirrored, bodyFrame);
+    const framesGrf = this.attachEstimatedGrf(baseFrames, anthropometrics, isFrontCameraMirrored, bodyFrame);
+
+    // 2b. 足圧中心（COP）: 倒立振子（ZMP）モデルで重心位置・加速度から推定し、支持基底面内に制限
+    const copResult = this.attachCenterOfPressure(framesGrf, bodyFrame, isFrontCameraMirrored);
+    const framesWithGrf = copResult.frames;
 
     // 3. 骨盤・肩の Y 座標軌跡抽出 & 平滑化
     const rawHipY = framesWithGrf.map(frame => {
@@ -151,6 +155,7 @@ export class StsMetricCalculator {
       failedAttempts: autoFailedAttempts
     });
     result.bodyFrame = bodyFrame;
+    result.feet = copResult.feet;
     return result;
   }
 
@@ -536,6 +541,106 @@ export class StsMetricCalculator {
     });
   }
 
+  /**
+   * Centre of pressure (COP) from the CoM, with the inverted-pendulum / zero-moment-point relation
+   *   COP_h = CoM_h - h * F_h / F_v
+   * (the line of action of the ground reaction force passes through the CoM), where h is the CoM height above the
+   * floor and F the estimated whole-body GRF. Everything is in the body frame relative to the mid-ankle
+   * ({fwd, left} metres). The COP is kept inside the base of support (convex hull of both feet's heel, ankle and
+   * toe points, their medians over the recording), and split between the feet by the lever rule: the share
+   * carried by the left foot is where the COP lies between the two foot axes. Each foot's own COP is on its
+   * heel-toe axis at the AP position of the total COP (clamped to that foot).
+   * Returns {frames, feet} with frame.cop = {fwd, left, heightM} and frame.copFeet = {left, right, leftShare}.
+   */
+  static attachCenterOfPressure(frames, bodyFrame, isMirrored = false) {
+    if (!bodyFrame) return { frames, feet: null };
+    const L = isMirrored ? [28, 30, 32] : [27, 29, 31];   // anatomical left ankle, heel, toe
+    const R = isMirrored ? [27, 29, 31] : [28, 30, 32];
+    const pts = { left: [[], [], []], right: [[], [], []] };
+    for (const f of frames) {
+      const w = f.worldLandmarks || {};
+      if (!w[27] || !w[28]) continue;
+      const a = { x: (w[27].x + w[28].x) / 2, y: (w[27].y + w[28].y) / 2, z: (w[27].z + w[28].z) / 2 };
+      for (const [side, idx] of [["left", L], ["right", R]]) {
+        idx.forEach((i, k) => {
+          if (w[i]) pts[side][k].push(this.toBody({ x: w[i].x - a.x, y: w[i].y - a.y, z: w[i].z - a.z }, bodyFrame));
+        });
+      }
+    }
+    if ([...pts.left, ...pts.right].some(p => p.length === 0)) return { frames, feet: null };
+    const med = (arr) => ({ fwd: this.median(arr.map(p => p.fwd)), left: this.median(arr.map(p => p.left)), up: this.median(arr.map(p => p.up)) });
+    const feet = { left: pts.left.map(med), right: pts.right.map(med) };   // [ankle, heel, toe]
+    // Floor: the lowest of the heel and toe points
+    feet.floorUp = Math.min(feet.left[1].up, feet.left[2].up, feet.right[1].up, feet.right[2].up);
+
+    const hull = this.convexHull([...feet.left, ...feet.right].map(p => [p.fwd, p.left]));
+    // Foot axis heel -> toe, and its lateral position at a given AP position
+    const axis = (ft) => ({ h: [ft[1].fwd, ft[1].left], t: [ft[2].fwd, ft[2].left] });
+    const ax = { left: axis(feet.left), right: axis(feet.right) };
+    const onAxis = (a, fwd) => {
+      const lo = Math.min(a.h[0], a.t[0]), hi = Math.max(a.h[0], a.t[0]);
+      const f = Math.max(lo, Math.min(hi, fwd));
+      const u = Math.abs(a.t[0] - a.h[0]) > 1e-6 ? (f - a.h[0]) / (a.t[0] - a.h[0]) : 0.5;
+      return { fwd: f, left: a.h[1] + u * (a.t[1] - a.h[1]) };
+    };
+
+    const out = frames.map((f) => {
+      if (f.comZ == null || f.comLateral == null || f.comUp == null) return f;
+      const heightM = Math.max(0.2, f.comUp - feet.floorUp);
+      let fwd = f.comZ, left = f.comLateral;
+      const g = f.grfVector;
+      if (g && g.y > 1e-3) {
+        const fF = g.x * bodyFrame.forward.x + g.z * bodyFrame.forward.z;
+        const fL = g.x * bodyFrame.left.x + g.z * bodyFrame.left.z;
+        // Low vertical force (rare, brief) would blow the ratio up: limit F_h / F_v
+        const lim = (v) => Math.max(-1.5, Math.min(1.5, v));
+        fwd -= heightM * lim(fF / g.y);
+        left -= heightM * lim(fL / g.y);
+      }
+      const [cf, cl] = this.clampToPolygon([fwd, left], hull);
+      const pl = onAxis(ax.left, cf), pr = onAxis(ax.right, cf);
+      const span = pl.left - pr.left;
+      const leftShare = Math.abs(span) > 1e-3 ? Math.max(0, Math.min(1, (cl - pr.left) / span)) : 0.5;
+      f.cop = { fwd: cf, left: cl, heightM };
+      f.copFeet = { left: pl, right: pr, leftShare };
+      return f;
+    });
+    return { frames: out, feet };
+  }
+
+  /** Convex hull of 2D points [[x, y], ...], counter-clockwise (monotone chain). */
+  static convexHull(points) {
+    const p = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (p.length < 3) return p;
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const q of p) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop(); lower.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop(); upper.push(q); }
+    upper.pop(); lower.pop();
+    return lower.concat(upper);
+  }
+
+  /** The point itself when inside the convex polygon (counter-clockwise), else the nearest point on its boundary. */
+  static clampToPolygon(q, poly) {
+    if (!poly || poly.length < 3) return q;
+    let inside = true;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if ((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0]) < 0) { inside = false; break; }
+    }
+    if (inside) return q;
+    let best = q, d = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * ex + (q[1] - a[1]) * ey) / Math.max(1e-12, ex * ex + ey * ey)));
+      const c = [a[0] + t * ex, a[1] + t * ey];
+      const e = Math.hypot(q[0] - c[0], q[1] - c[1]);
+      if (e < d) { d = e; best = c; }
+    }
+    return best;
+  }
+
   static interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored, bodyFrame = null) {
     const meshComs = this.interpolateMeshCom(rawFrames);
     const mutableLandmarks = rawFrames.map(f => ({ ...f.landmarks }));
@@ -653,6 +758,7 @@ export class StsMetricCalculator {
       let comZ = 0.0;
       let midAnkleZ = 0.0;
       let comLateral = null;
+      let comUp = null;
       let trunkAngleDeg = 0.0;
       let hipAngleDeg = 0.0;
       let kneeAngleDeg = 0.0;
@@ -693,6 +799,7 @@ export class StsMetricCalculator {
           comZ = c.fwd;
           midAnkleZ = 0.0;
           comLateral = c.left;
+          comUp = c.up;
           if (wLAnk && wRAnk) {
             const sep = Math.abs(this.toBody(sub(wLAnk, wRAnk), bodyFrame).left);
             const pelvisW3D = Math.abs(this.toBody(sub(wLHip, wRHip), bodyFrame).left);
@@ -746,7 +853,8 @@ export class StsMetricCalculator {
         hipAngleDeg,
         kneeAngleDeg,
         meshCom,
-        comLateral
+        comLateral,
+        comUp
       });
     });
   }

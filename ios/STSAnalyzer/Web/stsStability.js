@@ -48,7 +48,7 @@ function frameCom3D(f) {
  * @param isMirrored  front-camera mirroring (swaps which landmarks are the anatomical left foot)
  * @returns null when the landmarks are missing, else
  *   { axes, legLengthM, omega0, bos: {anterior, posterior, left, right}, feet: {left: [[f, m]...], right: [...]},
- *     series: [{timestampMs, com: [f, m], xcom: [f, m], mosAp, mosMl}], trials: [{repIndex, ...summary}] }
+ *     series: [{timestampMs, com: [f, m], xcom: [f, m], cop: [f, m] | null, copFeet, mosAp, mosMl}], trials: [{repIndex, ...summary}] }
  *   where [f, m] are metres forward / to the left of the mid-ankle point.
  */
 export function computeMarginOfStability(frames, trials, isMirrored = false, bodyFrame = null) {
@@ -65,6 +65,8 @@ export function computeMarginOfStability(frames, trials, isMirrored = false, bod
     const c = frameCom3D(f);
     return {
       t: f.timestampMs,
+      cop: f.cop ? [f.cop.fwd, f.cop.left] : null,
+      copFeet: f.copFeet ? { left: [f.copFeet.left.fwd, f.copFeet.left.left], right: [f.copFeet.right.fwd, f.copFeet.right.left], leftShare: f.copFeet.leftShare } : null,
       left: L.map(pt), right: R.map(pt),
       com: c ? { x: c.x - a.x, z: c.z - a.z } : null,
       leg: (w[23] && w[24]) ? (Math.hypot(w[23].x - w[27].x, w[23].y - w[27].y, w[23].z - w[27].z) +
@@ -121,6 +123,9 @@ export function computeMarginOfStability(frames, trials, isMirrored = false, bod
       timestampMs: valid[i].t,
       com: p,
       xcom,
+      // Estimated COP (stsMetrics.attachCenterOfPressure): same body axes when the body frame is used
+      cop: bodyFrame ? valid[i].cop : null,
+      copFeet: bodyFrame ? valid[i].copFeet : null,
       mosAp: Math.min(bos.anterior - xcom[0], xcom[0] - bos.posterior),
       mosMl: Math.min(bos.left - xcom[1], xcom[1] - bos.right)
     });
