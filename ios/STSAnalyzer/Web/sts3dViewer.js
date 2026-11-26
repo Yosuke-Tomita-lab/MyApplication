@@ -46,6 +46,9 @@ export class Sts3dViewer {
     this.grfWindows = [];        // [[startMs, endMs], ...] when the feet carry the body (seat-off to stable)
     this.grfBodyWeightN = 0;
 
+    // Body frame (initial seated pelvis orientation): the scene is turned so the subject faces +z (the "前面" view)
+    this.bodyFrame = null;
+
     // Colors
     this.colors = {
       right: 0x0284c7, // Sky Blue
@@ -334,6 +337,32 @@ export class Sts3dViewer {
     if (this.currentFrame) this.updateFrame(this.currentFrame);
   }
 
+  /** Turn the scene so the subject's initial (pelvis) forward direction faces +z, i.e. the front view. */
+  setBodyFrame(bodyFrame) {
+    this.bodyFrame = bodyFrame || null;
+    this.meshShownKey = null;
+    if (this.allFrames && this.allFrames.length) this.updateTrajectoryCurve();
+    if (this.currentFrame) this.updateFrame(this.currentFrame);
+  }
+
+  /** Yaw [cos, sin] that takes the body's forward (in viewer axes, after mirroring) to +z. */
+  bodyYaw() {
+    const bf = this.bodyFrame;
+    if (!bf) return [1, 0];
+    const sx = this.isMirrored ? -1 : 1;
+    const a = Math.atan2(sx * bf.forward.x, -bf.forward.z);   // forward in viewer axes: (sx*fx, -fz)
+    return [Math.cos(-a), Math.sin(-a)];
+  }
+
+  /** Rotate a viewer-space point/vector about the vertical axis into the body-facing frame (in place). */
+  toBodyView(v, yaw = this.bodyYaw()) {
+    if (!v) return v;
+    const [c, s] = yaw;
+    const x = v.x * c + v.z * s, z = -v.x * s + v.z * c;
+    v.x = x; v.z = z;
+    return v;
+  }
+
   setGrfVisible(show) {
     this.showGrf = !!show;
     if (this.currentFrame) this.updateFrame(this.currentFrame);
@@ -392,7 +421,7 @@ export class Sts3dViewer {
     // World axes -> viewer: x mirrored like the joints, y up, z towards the viewer
     const scale = GRF_BW_LENGTH / this.grfBodyWeightN;
     const sx = this.isMirrored ? -1 : 1;
-    const total = new THREE.Vector3(sx * g.x * scale, g.y * scale, -g.z * scale);
+    const total = this.toBodyView(new THREE.Vector3(sx * g.x * scale, g.y * scale, -g.z * scale));
     // Split between the feet by the left/right load share (the same share as the bias graph)
     const fl = Math.max(0, Math.min(1, (frame.leftBiasPercent ?? 50) / 100));
     const cop = new THREE.Vector3().addScaledVector(lFoot, fl).addScaledVector(rFoot, 1 - fl);
@@ -486,12 +515,15 @@ export class Sts3dViewer {
       const c = fr[k].com;
       if (c) { cx += w * (c[0] - ax); cy += w * (ay - c[1]); cz += w * (az - c[2]); cw += w; }
     }
+    const [yc, ys] = this.bodyYaw();
     for (let i = 0; i < pos.length; i += 3) {
-      pos[i] *= sx;
+      const x = pos[i] * sx, z = pos[i + 2];
+      pos[i] = x * yc + z * ys;
       pos[i + 1] += 0.05;
+      pos[i + 2] = -x * ys + z * yc;
     }
     // Centre of mass with the same smoothing, so the marker stays where it belongs inside the mesh
-    this.meshComDisplay = cw > 0 ? new THREE.Vector3(sx * cx / cw, Math.max(0.01, cy / cw + 0.05), cz / cw) : null;
+    this.meshComDisplay = cw > 0 ? this.toBodyView(new THREE.Vector3(sx * cx / cw, Math.max(0.01, cy / cw + 0.05), cz / cw)) : null;
     const geo = this.bodyMesh.geometry;
     geo.attributes.position.needsUpdate = true;
     geo.computeVertexNormals();
@@ -874,9 +906,13 @@ export class Sts3dViewer {
         const pt = rigidJoints[idx];
         mirroredJoints[targetIdx] = new THREE.Vector3(-pt.x, pt.y, pt.z);
       }
+      const yawM = this.bodyYaw();
+      for (const k in mirroredJoints) this.toBodyView(mirroredJoints[k], yawM);
       return mirroredJoints;
     }
 
+    const yaw = this.bodyYaw();
+    for (const k in rigidJoints) this.toBodyView(rigidJoints[k], yaw);
     return rigidJoints;
   }
 
@@ -886,7 +922,7 @@ export class Sts3dViewer {
     if (frame.meshCom?.world && frame.worldLandmarks && Object.keys(frame.worldLandmarks).length >= 10) {
       const p = this.transformWorldPoint(frame.meshCom.world, this.getAnkleReference(frame.worldLandmarks));
       if (this.isMirrored) p.x = -p.x;
-      return p;
+      return this.toBodyView(p);
     }
     const joints = this.getFrameJoints3D(frame);
     if (joints && joints[23] && joints[24] && joints[11] && joints[12] && joints[27] && joints[28]) {
@@ -906,7 +942,7 @@ export class Sts3dViewer {
     const fx = this.isMirrored ? -fxVal : fxVal;
     const fy = Math.max(0.1, (1.0 - frame.comY) * 1.5);
     const fz = (frame.comZ || 0);
-    return new THREE.Vector3(fx, fy, fz);
+    return this.toBodyView(new THREE.Vector3(fx, fy, fz));
   }
 
   // Continuous Sub-frame Time Interpolator (Lerp for ultra-smooth 60fps playback)

@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261126_5";
+} from "./stsModels.js?v=20261126_6";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -32,11 +32,14 @@ export class StsMetricCalculator {
       throw new Error("解析に十分なフレーム数がありません（最低5フレーム必要）。");
     }
 
+    // 0. 体の座標系（初期座位の骨盤の向き）: 前後・左右はカメラではなくこの向きで定義する
+    const bodyFrame = this.computeBodyFrame(rawFrames, isFrontCameraMirrored);
+
     // 1. 欠損値補間 & 重心再計算
-    const baseFrames = this.interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored);
+    const baseFrames = this.interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored, bodyFrame);
 
     // 2. 推定床反力（GRF）付与
-    const framesWithGrf = this.attachEstimatedGrf(baseFrames, anthropometrics, isFrontCameraMirrored);
+    const framesWithGrf = this.attachEstimatedGrf(baseFrames, anthropometrics, isFrontCameraMirrored, bodyFrame);
 
     // 3. 骨盤・肩の Y 座標軌跡抽出 & 平滑化
     const rawHipY = framesWithGrf.map(frame => {
@@ -138,7 +141,7 @@ export class StsMetricCalculator {
       overallTotalSec = Math.min(30.0, Math.max(0, (lastTime - t0) / 1000.0));
     }
 
-    return new StsAnalysisResult({
+    const result = new StsAnalysisResult({
       mode,
       anthropometrics,
       trials,
@@ -147,6 +150,68 @@ export class StsMetricCalculator {
       isFrontCameraMirrored,
       failedAttempts: autoFailedAttempts
     });
+    result.bodyFrame = bodyFrame;
+    return result;
+  }
+
+  /**
+   * Body axes from the initial (seated) posture, so that "forward" and "left" follow the subject, not the camera.
+   * Pelvis: left = right hip -> left hip, horizontal; up = vertical; forward = left x up. Taken as the mean
+   * direction over the first 0.6 s (at least 5 frames). Feet (heel -> toe) are used only when the hips are missing.
+   * Directions are in the worldLandmarks axes (x = image right, y = down, z = away from the camera), horizontal
+   * components only. `left` is the subject's anatomical left (front-camera mirroring taken into account).
+   */
+  static computeBodyFrame(frames, isMirrored = false) {
+    const t0 = frames[0]?.timestampMs ?? 0;
+    let win = frames.filter(f => f.timestampMs - t0 <= 600);
+    if (win.length < 5) win = frames.slice(0, Math.min(5, frames.length));
+    const meanDir = (vecs) => {
+      let x = 0, z = 0;
+      for (const v of vecs) { const n = Math.hypot(v.x, v.z); if (n > 1e-6) { x += v.x / n; z += v.z / n; } }
+      const n = Math.hypot(x, z);
+      return n > 1e-6 ? { x: x / n, z: z / n } : null;
+    };
+    const angleSd = (vecs, ref) => {
+      const a = vecs.map(v => Math.atan2(v.x * ref.z - v.z * ref.x, v.x * ref.x + v.z * ref.z) * 180 / Math.PI);
+      const m = a.reduce((p, q) => p + q, 0) / Math.max(1, a.length);
+      return Math.sqrt(a.reduce((p, q) => p + (q - m) * (q - m), 0) / Math.max(1, a.length));
+    };
+    // Model-labelled left (23) minus right (24); forward = left x up with up = -y: (lx, lz) -> (lz, -lx)
+    const hipVecs = win.map(f => f.worldLandmarks || {}).filter(w => w[23] && w[24])
+      .map(w => ({ x: w[23].x - w[24].x, z: w[23].z - w[24].z }));
+    const pelvisLeft = meanDir(hipVecs);
+    const pelvisFwd = pelvisLeft ? { x: pelvisLeft.z, z: -pelvisLeft.x } : null;
+    const footVecs = [];
+    for (const f of win) {
+      const w = f.worldLandmarks || {};
+      if (w[29] && w[31]) footVecs.push({ x: w[31].x - w[29].x, z: w[31].z - w[29].z });
+      if (w[30] && w[32]) footVecs.push({ x: w[32].x - w[30].x, z: w[32].z - w[30].z });
+    }
+    const feetFwd = meanDir(footVecs);
+    const fwd = pelvisFwd || feetFwd;
+    if (!fwd) return null;
+    // Model-left -> anatomical left; forward does not change with mirroring (the cross product flips with it)
+    const ml = { x: -fwd.z, z: fwd.x };            // model-labelled left, perpendicular to forward
+    const left = isMirrored ? { x: -ml.x, z: -ml.z } : ml;
+    const diff = (pelvisFwd && feetFwd)
+      ? Math.abs(Math.atan2(pelvisFwd.x * feetFwd.z - pelvisFwd.z * feetFwd.x, pelvisFwd.x * feetFwd.x + pelvisFwd.z * feetFwd.z) * 180 / Math.PI)
+      : null;
+    return {
+      forward: fwd, left,
+      method: pelvisFwd ? "pelvis" : "feet",
+      pelvisFeetAngleDeg: diff,
+      pelvisSdDeg: pelvisFwd ? angleSd(hipVecs.map(v => ({ x: v.z, z: -v.x })), pelvisFwd) : null,
+      cameraYawDeg: Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI   // 0 = facing the camera
+    };
+  }
+
+  /** World vector -> body components {left, up, fwd} (worldLandmarks axes, y down). */
+  static toBody(v, bf) {
+    return {
+      left: v.x * bf.left.x + v.z * bf.left.z,
+      up: -v.y,
+      fwd: v.x * bf.forward.x + v.z * bf.forward.z
+    };
   }
 
   /**
@@ -368,7 +433,7 @@ export class StsMetricCalculator {
     });
   }
 
-  static attachEstimatedGrf(frames, anthropometrics, isFrontCameraMirrored) {
+  static attachEstimatedGrf(frames, anthropometrics, isFrontCameraMirrored, bodyFrame = null) {
     const massKg = Math.max(20.0, Math.min(250.0, anthropometrics.weightKg));
     const heightMeters = Math.max(100.0, Math.min(240.0, anthropometrics.heightCm)) / 100.0;
 
@@ -390,7 +455,11 @@ export class StsMetricCalculator {
     const estimatedStandingNormHeight = Math.max(0.30, (maxFootY - minTopY) * 1.12);
     const metersPerNormUnit = heightMeters / estimatedStandingNormHeight;
 
-    const smoothComX = this.movingAverage(frames.map(f => f.comX), 7);
+    // Lateral: the body-frame CoM (metres, to the subject's left) when available, else the image x
+    const useBodyLateral = !!bodyFrame && frames.every(f => f.comLateral != null);
+    const smoothComX = useBodyLateral
+      ? this.movingAverage(frames.map(f => f.comLateral), 7)
+      : this.movingAverage(frames.map(f => f.comX), 7);
     const smoothComY = this.movingAverage(frames.map(f => f.comY), 7);
     const smoothComZ = this.movingAverage(frames.map(f => f.comZ), 7);
 
@@ -400,7 +469,7 @@ export class StsMetricCalculator {
 
     for (let i = 1; i < frames.length; i++) {
       const dtSec = Math.max(0.008, (frames[i].timestampMs - frames[i - 1].timestampMs) / 1000.0);
-      const dxMeters = (smoothComX[i] - smoothComX[i - 1]) * metersPerNormUnit;
+      const dxMeters = (smoothComX[i] - smoothComX[i - 1]) * (useBodyLateral ? 1 : metersPerNormUnit);
       const dyUpMeters = -(smoothComY[i] - smoothComY[i - 1]) * metersPerNormUnit;
       const dzMeters = smoothComZ[i] - smoothComZ[i - 1];
       vx[i] = dxMeters / dtSec;
@@ -428,7 +497,7 @@ export class StsMetricCalculator {
     const smoothAz = this.movingAverage(azForward, 5);
 
     return frames.map((frame, i) => {
-      const signedAxLeft = isFrontCameraMirrored ? -smoothAx[i] : smoothAx[i];
+      const signedAxLeft = useBodyLateral ? smoothAx[i] : (isFrontCameraMirrored ? -smoothAx[i] : smoothAx[i]);
       const ay = smoothAy[i];
       const az = smoothAz[i];
 
@@ -447,7 +516,12 @@ export class StsMetricCalculator {
       return new PoseFrameData({
         ...frame,
         // Whole-body GRF vector [N] in the worldLandmarks axes: x = image right, y = up, z = away from the camera
-        grfVector: { x: massKg * smoothAx[i], y: verticalN, z: massKg * az },
+        grfVector: bodyFrame
+          ? { // body-frame accelerations back to world axes (x image right, y up, z away from the camera)
+              x: massKg * (az * bodyFrame.forward.x + signedAxLeft * bodyFrame.left.x),
+              y: verticalN,
+              z: massKg * (az * bodyFrame.forward.z + signedAxLeft * bodyFrame.left.z) }
+          : { x: massKg * smoothAx[i], y: verticalN, z: massKg * az },
         grf: new GrfSample(
           verticalBw,
           verticalN,
@@ -462,7 +536,7 @@ export class StsMetricCalculator {
     });
   }
 
-  static interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored) {
+  static interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored, bodyFrame = null) {
     const meshComs = this.interpolateMeshCom(rawFrames);
     const mutableLandmarks = rawFrames.map(f => ({ ...f.landmarks }));
     const mutableWorldLm = rawFrames.map(f => ({ ...(f.worldLandmarks || {}) }));
@@ -563,7 +637,8 @@ export class StsMetricCalculator {
       const comY = meshCom?.image ? meshCom.image.y : 0.30 * midShoulderY + 0.40 * midHipY + 0.30 * midFootY;
 
       const signedShift = isFrontCameraMirrored ? midBaseX - comX : comX - midBaseX;
-      const leftBias = Math.max(0, Math.min(100, 50.0 + (signedShift / baseWidth) * 100.0));
+      // 2D fallback; replaced by the body-frame value below when 3D landmarks are available
+      let leftBias = Math.max(0, Math.min(100, 50.0 + (signedShift / baseWidth) * 100.0));
 
       // --- 3D World Landmarks 生体力学計算 ---
       const wLSh = wlm[11];
@@ -577,6 +652,7 @@ export class StsMetricCalculator {
 
       let comZ = 0.0;
       let midAnkleZ = 0.0;
+      let comLateral = null;
       let trunkAngleDeg = 0.0;
       let hipAngleDeg = 0.0;
       let kneeAngleDeg = 0.0;
@@ -604,21 +680,49 @@ export class StsMetricCalculator {
           z: (wLAnk.z + wRAnk.z) / 2
         } : midKnee3D;
 
-        midAnkleZ = midAnk3D.z;
-        comZ = meshCom?.world ? meshCom.world.z : 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z;
+        const com3D = meshCom?.world ? meshCom.world : {
+          x: 0.35 * midSh3D.x + 0.35 * midHip3D.x + 0.30 * midAnk3D.x,
+          y: 0.35 * midSh3D.y + 0.35 * midHip3D.y + 0.30 * midAnk3D.y,
+          z: 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z
+        };
+        const sub = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
 
-        const dyTrunk = Math.abs(midSh3D.y - midHip3D.y);
-        const dzTrunk = Math.abs(midSh3D.z - midHip3D.z);
-        trunkAngleDeg = Math.atan2(dzTrunk, Math.max(0.01, dyTrunk)) * (180.0 / Math.PI);
+        if (bodyFrame) {
+          // Body axes: CoM relative to the mid-ankle (ground-fixed while the feet stay put), forward / left of it
+          const c = this.toBody(sub(com3D, midAnk3D), bodyFrame);
+          comZ = c.fwd;
+          midAnkleZ = 0.0;
+          comLateral = c.left;
+          if (wLAnk && wRAnk) {
+            const sep = Math.abs(this.toBody(sub(wLAnk, wRAnk), bodyFrame).left);
+            const pelvisW3D = Math.abs(this.toBody(sub(wLHip, wRHip), bodyFrame).left);
+            const width3D = Math.max(sep, Math.max(0.06, pelvisW3D * 0.8));
+            leftBias = Math.max(0, Math.min(100, 50.0 + (c.left / width3D) * 100.0));
+          }
+          // Sagittal-plane angles: vectors projected on the body's (up, forward) plane
+          const sag = (v) => { const b = this.toBody(v, bodyFrame); return [0, b.up, b.fwd]; };
+          const tr = this.toBody(sub(midSh3D, midHip3D), bodyFrame);
+          trunkAngleDeg = Math.atan2(Math.abs(tr.fwd), Math.max(0.01, Math.abs(tr.up))) * (180.0 / Math.PI);
+          hipAngleDeg = this.calculateAngleBetweenVectors(sag(sub(midHip3D, midSh3D)), sag(sub(midKnee3D, midHip3D)));
+          const kneeExtAngle = this.calculateAngleBetweenVectors(sag(sub(midHip3D, midKnee3D)), sag(sub(midAnk3D, midKnee3D)));
+          kneeAngleDeg = Math.max(0, 180.0 - kneeExtAngle);
+        } else {
+          midAnkleZ = midAnk3D.z;
+          comZ = com3D.z;
 
-        const vTrunk = [0, -(midSh3D.y - midHip3D.y), -(midSh3D.z - midHip3D.z)];
-        const vThigh = [0, midKnee3D.y - midHip3D.y, midKnee3D.z - midHip3D.z];
-        hipAngleDeg = this.calculateAngleBetweenVectors(vTrunk, vThigh);
+          const dyTrunk = Math.abs(midSh3D.y - midHip3D.y);
+          const dzTrunk = Math.abs(midSh3D.z - midHip3D.z);
+          trunkAngleDeg = Math.atan2(dzTrunk, Math.max(0.01, dyTrunk)) * (180.0 / Math.PI);
 
-        const vThighInv = [0, midHip3D.y - midKnee3D.y, midHip3D.z - midKnee3D.z];
-        const vShank = [0, midAnk3D.y - midKnee3D.y, midAnk3D.z - midKnee3D.z];
-        const kneeExtAngle = this.calculateAngleBetweenVectors(vThighInv, vShank);
-        kneeAngleDeg = Math.max(0, 180.0 - kneeExtAngle);
+          const vTrunk = [0, -(midSh3D.y - midHip3D.y), -(midSh3D.z - midHip3D.z)];
+          const vThigh = [0, midKnee3D.y - midHip3D.y, midKnee3D.z - midHip3D.z];
+          hipAngleDeg = this.calculateAngleBetweenVectors(vTrunk, vThigh);
+
+          const vThighInv = [0, midHip3D.y - midKnee3D.y, midHip3D.z - midKnee3D.z];
+          const vShank = [0, midAnk3D.y - midKnee3D.y, midAnk3D.z - midKnee3D.z];
+          const kneeExtAngle = this.calculateAngleBetweenVectors(vThighInv, vShank);
+          kneeAngleDeg = Math.max(0, 180.0 - kneeExtAngle);
+        }
       } else {
         const dyTrunk2D = Math.abs(midShoulderY - midHipY);
         trunkAngleDeg = Math.max(0, Math.min(60, (0.35 - dyTrunk2D) * 120.0));
@@ -641,7 +745,8 @@ export class StsMetricCalculator {
         trunkAngleDeg,
         hipAngleDeg,
         kneeAngleDeg,
-        meshCom
+        meshCom,
+        comLateral
       });
     });
   }

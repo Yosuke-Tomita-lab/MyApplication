@@ -25,6 +25,13 @@ export class StsCsvExporter {
     sb.push(`SubjectHeight_cm,${result.anthropometrics.heightCm.toFixed(1)}`);
     sb.push(`SubjectWeight_kg,${result.anthropometrics.weightKg.toFixed(1)}`);
     sb.push(`FrontCameraMirrored,${result.isFrontCameraMirrored}`);
+    const bf = result.bodyFrame;
+    if (bf) {
+      sb.push(`BodyFrame,${bf.method === "pelvis" ? "initial seated pelvis orientation" : "initial foot orientation"}`);
+      sb.push(`BodyFrame_CameraYaw_deg,${bf.cameraYawDeg.toFixed(1)}`);
+      if (bf.pelvisFeetAngleDeg != null) sb.push(`BodyFrame_PelvisVsFeet_deg,${bf.pelvisFeetAngleDeg.toFixed(1)}`);
+      sb.push("Axes,LM3D X = subject's left / Y = up / Z = forward (m; origin mid-hip). CoM_Z_m = CoM forward of the mid-ankle (m); MidAnkle_Z_m = 0. Lateral GRF positive to the left; AP propulsion = forward.");
+    }
 
     if (result.overallTotalDurationSec != null) {
       sb.push(`OverallTotalDuration_s,${result.overallTotalDurationSec.toFixed(3)}`);
@@ -229,7 +236,13 @@ export class StsCsvExporter {
       ];
       for (let i = 0; i < 33; i++) {
         const pt = f.landmarks[i];
-        const wpt = f.worldLandmarks ? f.worldLandmarks[i] : null;
+        const w0 = f.worldLandmarks ? f.worldLandmarks[i] : null;
+        // 3D landmarks in the body frame (left, up, forward) when available
+        const wpt = (w0 && bf) ? {
+          x: w0.x * bf.left.x + w0.z * bf.left.z,
+          y: -w0.y,
+          z: w0.x * bf.forward.x + w0.z * bf.forward.z
+        } : w0;
         row.push(
           pt ? pt.x.toFixed(4) : "",
           pt ? pt.y.toFixed(4) : "",

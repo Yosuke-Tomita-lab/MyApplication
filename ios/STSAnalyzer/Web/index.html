@@ -876,12 +876,12 @@
 
   <!-- App Script (ES Module) -->
   <script type="module">
-    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_5";
-    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_5";
-    import { StsCsvExporter } from "./stsExporter.js?v=20261126_5";
-    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_5";
-    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_5";
-    import { computeMarginOfStability } from "./stsStability.js?v=20261126_5";
+    import { StsMode, SubjectAnthropometrics, PoseFrameData, Point2D, Point3D, FailedAttempt } from "./stsModels.js?v=20261126_6";
+    import { StsMetricCalculator } from "./stsMetrics.js?v=20261126_6";
+    import { StsCsvExporter } from "./stsExporter.js?v=20261126_6";
+    import { Sts3dViewer } from "./sts3dViewer.js?v=20261126_6";
+    import { StsMeshEstimator } from "./stsMeshEstimator.js?v=20261126_6";
+    import { computeMarginOfStability } from "./stsStability.js?v=20261126_6";
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // Application State
@@ -1138,6 +1138,7 @@
           }
           applyMeshSequenceToViewer();
           applyGrfToViewer();
+          sts3dViewer.setBodyFrame(analysisResult ? analysisResult.bodyFrame : null);
         } catch (e) {
           console.warn("Lazy 3D viewer init error:", e);
         }
@@ -1577,12 +1578,13 @@
           sts3dViewer.loadFrames(analysisResult.frames);
           applyMeshSequenceToViewer();
           applyGrfToViewer();
+          sts3dViewer.setBodyFrame(analysisResult ? analysisResult.bodyFrame : null);
         } catch (e) {
           console.warn("Failed to load frames into 3D viewer:", e);
         }
       }
 
-      stabilityResult = computeMarginOfStability(analysisResult.frames, analysisResult.trials, isFrontCameraMirrored);
+      stabilityResult = computeMarginOfStability(analysisResult.frames, analysisResult.trials, isFrontCameraMirrored, analysisResult.bodyFrame);
 
       exportCsvBtn.disabled = false;
       openReportBtn.disabled = false;
