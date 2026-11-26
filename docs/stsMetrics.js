@@ -14,7 +14,7 @@ import {
   SingleTrialMetrics,
   StsAnalysisResult,
   SubjectAnthropometrics
-} from "./stsModels.js?v=20261125_19";
+} from "./stsModels.js?v=20261126_2";
 
 const GRAVITY = 9.80665;
 const TRACKED_INDICES = [11, 12, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -456,6 +456,7 @@ export class StsMetricCalculator {
   }
 
   static interpolateAndRecomputeCom(rawFrames, isFrontCameraMirrored) {
+    const meshComs = this.interpolateMeshCom(rawFrames);
     const mutableLandmarks = rawFrames.map(f => ({ ...f.landmarks }));
     const mutableWorldLm = rawFrames.map(f => ({ ...(f.worldLandmarks || {}) }));
 
@@ -543,14 +544,16 @@ export class StsMetricCalculator {
       const midShoulderX = (lShoulder.x + rShoulder.x) / 2.0;
       const midHipX = (lHip.x + rHip.x) / 2.0;
       const midFootX = (lFootX + rFootX) / 2.0;
-      const comX = 0.30 * midShoulderX + 0.40 * midHipX + 0.30 * midFootX;
+      const meshCom = meshComs ? meshComs[i] : null;
+      // Mesh CoM (InstantHMR) when available; otherwise a 3-point weighted estimate from the landmarks
+      const comX = meshCom?.image ? meshCom.image.x : 0.30 * midShoulderX + 0.40 * midHipX + 0.30 * midFootX;
 
       const midShoulderY = (lShoulder.y + rShoulder.y) / 2.0;
       const midHipY = (lHip.y + rHip.y) / 2.0;
       const lFootY = this.averageY(lm[27], lm[29], lm[31]) ?? lHip.y;
       const rFootY = this.averageY(lm[28], lm[30], lm[32]) ?? rHip.y;
       const midFootY = (lFootY + rFootY) / 2.0;
-      const comY = 0.30 * midShoulderY + 0.40 * midHipY + 0.30 * midFootY;
+      const comY = meshCom?.image ? meshCom.image.y : 0.30 * midShoulderY + 0.40 * midHipY + 0.30 * midFootY;
 
       const signedShift = isFrontCameraMirrored ? midBaseX - comX : comX - midBaseX;
       const leftBias = Math.max(0, Math.min(100, 50.0 + (signedShift / baseWidth) * 100.0));
@@ -595,7 +598,7 @@ export class StsMetricCalculator {
         } : midKnee3D;
 
         midAnkleZ = midAnk3D.z;
-        comZ = 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z;
+        comZ = meshCom?.world ? meshCom.world.z : 0.35 * midSh3D.z + 0.35 * midHip3D.z + 0.30 * midAnk3D.z;
 
         const dyTrunk = Math.abs(midSh3D.y - midHip3D.y);
         const dzTrunk = Math.abs(midSh3D.z - midHip3D.z);
@@ -630,9 +633,33 @@ export class StsMetricCalculator {
         rightBiasPercent: 100.0 - leftBias,
         trunkAngleDeg,
         hipAngleDeg,
-        kneeAngleDeg
+        kneeAngleDeg,
+        meshCom
       });
     });
+  }
+
+  /**
+   * Mesh CoM per frame with gaps (frames where the mesh estimator failed) filled by linear interpolation,
+   * so the CoM does not jump between the mesh and the landmark estimate. Null when no frame has a mesh CoM.
+   */
+  static interpolateMeshCom(rawFrames) {
+    if (!rawFrames.some(f => f.meshCom)) return null;
+    const lerp = (a, b, t) => (a && b) ? { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, ...(a.z != null ? { z: a.z + (b.z - a.z) * t } : {}) } : (a || b || null);
+    const out = rawFrames.map(f => f.meshCom || null);
+    for (const key of ["world", "image"]) {
+      const has = out.map(c => !!(c && c[key]));
+      for (let f = 0; f < out.length; f++) {
+        if (has[f]) continue;
+        let p = f - 1; while (p >= 0 && !has[p]) p--;
+        let n = f + 1; while (n < out.length && !has[n]) n++;
+        const a = p >= 0 ? out[p][key] : null, b = n < out.length ? out[n][key] : null;
+        if (!a && !b) continue;
+        const t = (a && b) ? (f - p) / (n - p) : 0;
+        out[f] = { ...(out[f] || {}), [key]: lerp(a, b, t) };
+      }
+    }
+    return out;
   }
 
   static calculateAngleBetweenVectors(v1, v2) {

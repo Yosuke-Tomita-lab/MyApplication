@@ -735,6 +735,12 @@ export class Sts3dViewer {
 
   getFrameCom3D(frame) {
     if (!frame) return null;
+    // Mesh CoM (InstantHMR): same placement as the mesh and the joints, so it sits inside the body
+    if (frame.meshCom?.world && frame.worldLandmarks && Object.keys(frame.worldLandmarks).length >= 10) {
+      const p = this.transformWorldPoint(frame.meshCom.world, this.getAnkleReference(frame.worldLandmarks));
+      if (this.isMirrored) p.x = -p.x;
+      return p;
+    }
     const joints = this.getFrameJoints3D(frame);
     if (joints && joints[23] && joints[24] && joints[11] && joints[12] && joints[27] && joints[28]) {
       const midSh = new THREE.Vector3().addVectors(joints[11], joints[12]).multiplyScalar(0.5);
@@ -825,7 +831,15 @@ export class Sts3dViewer {
       landmarks: interpLm,
       comX: f0.comX + (f1.comX - f0.comX) * alpha,
       comY: f0.comY + (f1.comY - f0.comY) * alpha,
-      midBaseX: f0.midBaseX + (f1.midBaseX - f0.midBaseX) * alpha
+      midBaseX: f0.midBaseX + (f1.midBaseX - f0.midBaseX) * alpha,
+      meshCom: (f0.meshCom?.world && f1.meshCom?.world) ? {
+        ...f0.meshCom,
+        world: {
+          x: f0.meshCom.world.x + (f1.meshCom.world.x - f0.meshCom.world.x) * alpha,
+          y: f0.meshCom.world.y + (f1.meshCom.world.y - f0.meshCom.world.y) * alpha,
+          z: f0.meshCom.world.z + (f1.meshCom.world.z - f0.meshCom.world.z) * alpha
+        }
+      } : f0.meshCom
     };
 
     this.updateFrame(interpFrame);
